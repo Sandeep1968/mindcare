@@ -154,13 +154,26 @@
         <button class="btn btn-primary" onclick="openApptModal()">+ New Appointment</button>
       </header>
       <div class="card">
-        <div class="btn-row filter-row">
+        <div class="sched-toolbar">
+          <div class="btn-row">
+            <button class="chip active" id="mode-list" onclick="setScheduleMode('list')">List</button>
+            <button class="chip" id="mode-week" onclick="setScheduleMode('week')">Week</button>
+          </div>
+          <div class="btn-row hidden" id="week-nav">
+            <button class="btn btn-sm" onclick="shiftWeek(-1)" title="Previous week">←</button>
+            <button class="btn btn-sm" onclick="shiftWeek(0)">This week</button>
+            <button class="btn btn-sm" onclick="shiftWeek(1)" title="Next week">→</button>
+            <span class="muted small" id="week-label"></span>
+          </div>
+        </div>
+        <div class="btn-row filter-row" id="sched-filters">
           <button class="chip active" data-filter="upcoming" onclick="setApptFilter('upcoming', this)">Upcoming</button>
           <button class="chip" data-filter="today" onclick="setApptFilter('today', this)">Today</button>
           <button class="chip" data-filter="past" onclick="setApptFilter('past', this)">Past</button>
           <button class="chip" data-filter="all" onclick="setApptFilter('all', this)">All</button>
         </div>
         <div id="appt-list"></div>
+        <div id="appt-week" class="week-grid hidden"></div>
       </div>
     </section>
 
@@ -291,6 +304,9 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
+
+<!-- Filled and shown only while printing an invoice/superbill -->
+<div id="print-invoice"></div>
 
 <script src="app.js"></script>
 </body>

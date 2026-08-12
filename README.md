@@ -23,9 +23,10 @@ then visit http://localhost:8742.
 | Dashboard | Today's appointments, week ahead, outstanding balances |
 | Patients | Demographics, emergency contact, insurance, searchable list |
 | Clinical entries | Dated symptom + diagnosis + session-note records per patient |
-| Schedule | Video and in-person visit scheduler with filters (today / upcoming / past) |
+| Schedule | Video and in-person visit scheduler — list view with filters, plus a week-calendar grid with prev/next navigation |
+| Session notes | One-click SOAP or DAP templates in every clinical entry |
 | Video visits | One-press Zoom launch: save your Zoom Personal Meeting Room link once, then every 🎥 button activates the Zoom meeting instantly (app deep link with browser fallback). Jitsi Meet available as a no-account fallback. |
-| Billing & payments | Invoices per service, partial/full payment recording, balance tracking |
+| Billing & payments | Invoices per service, partial/full payment recording, balance tracking, printable statement/superbill per invoice |
 | Health reports | Full per-patient report on screen; **Download PDF** uses the browser's print-to-PDF with a clean print stylesheet |
 | Data & backup | One-click JSON export/import, full data wipe |
 

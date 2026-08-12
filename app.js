@@ -246,7 +246,13 @@ function openRecordModal(recordId) {
         <label>Diagnosis / impression<input class="input" name="diagnosis" placeholder="e.g. Generalized Anxiety Disorder (F41.1)" value="${esc(r.diagnosis)}"></label>
       </div>
       <div class="form-row">
-        <label>Session notes<textarea class="input" name="notes">${esc(r.notes)}</textarea></label>
+        <label>Session notes
+          <span class="btn-row" style="margin-bottom:4px">
+            <button type="button" class="btn btn-sm" onclick="insertNoteTemplate(this, 'SOAP')">Insert SOAP template</button>
+            <button type="button" class="btn btn-sm" onclick="insertNoteTemplate(this, 'DAP')">Insert DAP template</button>
+          </span>
+          <textarea class="input" name="notes" rows="6">${esc(r.notes)}</textarea>
+        </label>
       </div>
       <div class="btn-row" style="justify-content:flex-end">
         ${recordId ? `<button type="button" class="btn btn-danger" onclick="deleteRecord('${recordId}')">Delete</button>` : ''}
@@ -270,6 +276,16 @@ function saveRecord(e, recordId) {
   save();
   renderPatientDetail();
   toast('Clinical entry saved');
+}
+
+const NOTE_TEMPLATES = {
+  SOAP: 'S — Subjective:\n\nO — Objective:\n\nA — Assessment:\n\nP — Plan:\n',
+  DAP: 'D — Data:\n\nA — Assessment:\n\nP — Plan:\n',
+};
+function insertNoteTemplate(btn, key) {
+  const ta = btn.closest('label').querySelector('textarea[name="notes"]');
+  ta.value = ta.value.trim() ? ta.value.replace(/\s*$/, '\n\n') + NOTE_TEMPLATES[key] : NOTE_TEMPLATES[key];
+  ta.focus();
 }
 
 function deleteRecord(recordId) {
@@ -374,12 +390,59 @@ function apptRow(a) {
 
 function setApptFilter(f, btn) {
   apptFilter = f;
-  document.querySelectorAll('#view-schedule .chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('#sched-filters .chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
   renderSchedule();
 }
 
+let scheduleMode = 'list';
+let weekOffset = 0; // weeks relative to the current one
+
+function setScheduleMode(m) {
+  scheduleMode = m;
+  document.getElementById('mode-list').classList.toggle('active', m === 'list');
+  document.getElementById('mode-week').classList.toggle('active', m === 'week');
+  document.getElementById('sched-filters').classList.toggle('hidden', m !== 'list');
+  document.getElementById('appt-list').classList.toggle('hidden', m !== 'list');
+  document.getElementById('week-nav').classList.toggle('hidden', m !== 'week');
+  document.getElementById('appt-week').classList.toggle('hidden', m !== 'week');
+  renderSchedule();
+}
+
+function shiftWeek(dir) {
+  weekOffset = dir === 0 ? 0 : weekOffset + dir;
+  renderSchedule();
+}
+
+function startOfWeek() { // Monday of the displayed week
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + weekOffset * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function renderWeek() {
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(startOfWeek()); d.setDate(d.getDate() + i); return d;
+  });
+  document.getElementById('week-label').textContent =
+    `${days[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ` +
+    `${days[6].toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  document.getElementById('appt-week').innerHTML = days.map(d => {
+    const iso = isoDate(d);
+    const appts = db.appointments.filter(a => a.date === iso).sort((x, y) => x.time.localeCompare(y.time));
+    return `<div class="day-col ${iso === todayIso() ? 'today' : ''}">
+      <div class="day-head">${d.toLocaleDateString(undefined, { weekday: 'short' })}<span>${d.getDate()}</span></div>
+      ${appts.map(a => `<button class="appt-chip ${a.type === 'in-person' ? 'chip-inperson' : 'chip-video'}"
+        onclick="openApptModal(null, '${a.id}')" title="${esc(patientName(a.patientId))}${a.reason ? ' — ' + esc(a.reason) : ''}">
+        <b>${fmtTime(a.time)}</b>${esc(patientName(a.patientId).split(' ')[0])} ${a.type === 'in-person' ? '🏢' : '🎥'}</button>`).join('')
+      || '<div class="day-empty">—</div>'}
+    </div>`;
+  }).join('');
+}
+
 function renderSchedule() {
+  if (scheduleMode === 'week') { renderWeek(); return; }
   const t = todayIso();
   let list = db.appointments.slice();
   if (apptFilter === 'upcoming') list = list.filter(a => a.date >= t);
@@ -595,10 +658,65 @@ function renderBilling() {
       </div>
       <div class="btn-row">
         ${st !== 'paid' ? `<button class="btn btn-sm btn-primary" onclick="openPaymentModal('${inv.id}')">Record payment</button>` : ''}
+        <button class="btn btn-sm" onclick="printInvoice('${inv.id}')" title="Print a statement/superbill for this invoice">Print</button>
         <button class="btn btn-sm" onclick="openInvoiceModal('${inv.id}')">Edit</button>
       </div>
     </div>`;
   }).join('') : '<div class="empty">No invoices yet.</div>';
+}
+
+// Printable statement/superbill for a single invoice — patients can submit
+// this to their insurer for out-of-network reimbursement.
+function printInvoice(invoiceId) {
+  const inv = db.invoices.find(x => x.id === invoiceId);
+  const p = patientById(inv.patientId);
+  const paid = paidAmount(inv);
+  const due = Number(inv.amount) - paid;
+  document.getElementById('print-invoice').innerHTML = `
+    <div class="report-sheet" style="box-shadow:none;border:none">
+      <div class="report-header">
+        <div>
+          <div class="report-clinic">MindCare Practice</div>
+          <div class="muted small">Statement of services (superbill)</div>
+        </div>
+        <div class="small" style="text-align:right">
+          Statement date: ${new Date().toLocaleDateString()}<br>
+          Invoice ID: ${esc(inv.id)}
+        </div>
+      </div>
+      <div class="report-section">
+        <h3>Patient</h3>
+        <div class="report-kv">
+          <div><b>Name:</b> ${esc(p?.name || '(deleted patient)')}</div>
+          <div><b>Date of birth:</b> ${p?.dob ? fmtDate(p.dob) : '—'}</div>
+          <div><b>Insurance:</b> ${esc(p?.insurance || '—')}</div>
+        </div>
+      </div>
+      <div class="report-section">
+        <h3>Services</h3>
+        <table class="report-table">
+          <tr><th style="width:120px">Date of service</th><th>Description</th><th style="width:90px">Charge</th></tr>
+          <tr><td>${fmtDate(inv.date)}</td><td>${esc(inv.description)}</td><td>${money(inv.amount)}</td></tr>
+        </table>
+      </div>
+      <div class="report-section">
+        <h3>Payments</h3>
+        ${(inv.payments || []).length ? `<table class="report-table">
+          <tr><th style="width:120px">Date</th><th>Method</th><th style="width:90px">Amount</th></tr>
+          ${inv.payments.map(pay => `<tr><td>${fmtDate(pay.date)}</td><td>${esc(pay.method || '—')}</td><td>${money(pay.amount)}</td></tr>`).join('')}
+        </table>` : '<p class="muted small">No payments recorded.</p>'}
+        <p class="small" style="margin-bottom:0"><b>Total charged:</b> ${money(inv.amount)} &nbsp;
+          <b>Paid:</b> ${money(paid)} &nbsp; <b>Balance due:</b> ${money(due)}</p>
+      </div>
+      <div class="report-foot">
+        Statement generated by MindCare for the patient's records and insurance reimbursement.
+        Provider details and tax ID may be added by hand or stamp where the insurer requires them.
+      </div>
+    </div>`;
+  document.body.classList.add('print-invoice-mode');
+  window.addEventListener('afterprint',
+    () => document.body.classList.remove('print-invoice-mode'), { once: true });
+  window.print();
 }
 
 /* ============ Reports ============ */
