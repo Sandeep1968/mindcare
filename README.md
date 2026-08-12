@@ -20,6 +20,7 @@ then visit http://localhost:8742.
 
 | Module | What it does |
 |---|---|
+| Login & roles | Doctor (super user) and Staff accounts with salted+hashed passwords. Staff see patients, scheduling, video and billing; clinical entries, health reports, backups and user management are doctor-only. Lock button ends the session. |
 | Dashboard | Today's appointments, week ahead, outstanding balances |
 | Patients | Demographics, emergency contact, insurance, searchable list |
 | Clinical entries | Dated symptom + diagnosis + session-note records per patient |
@@ -47,6 +48,9 @@ then visit http://localhost:8742.
   - for telehealth under HIPAA, use a provider that signs a BAA (Zoom for Healthcare, doxy.me,
     SimplePractice Telehealth). The built-in Zoom integration uses your Personal Meeting Room link —
     pair it with a Zoom for Healthcare account and enable the waiting room so patients can't join early.
+- Login is **device-level access control**, not server-grade security: passwords are salted and hashed and the
+  UI is role-gated, but a technically skilled person with access to the browser could still reach the stored data.
+  It is designed to keep a shared office computer honest, not to repel attackers.
 - Local storage is per-browser: clearing browser data erases the app's data. **Back up weekly.**
 - Single practitioner, single device by design. If you outgrow it, the JSON export gives you a clean migration path.
 

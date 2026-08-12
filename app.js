@@ -6,6 +6,7 @@ const LEGACY_STORE_KEY = 'theradesk.v1'; // pre-rebrand key; migrated on first l
 
 let db = load();
 db.settings = { provider: 'zoom', zoomLink: '', ...(db.settings || {}) };
+db.users = db.users || [];
 let currentPatientId = null;
 let apptFilter = 'upcoming';
 
@@ -27,6 +28,7 @@ function load() {
 function save() {
   // db can be wholesale-replaced (wipe/import/sample load) — always re-ensure defaults
   db.settings = { provider: 'zoom', zoomLink: '', ...(db.settings || {}) };
+  db.users = db.users || [];
   localStorage.setItem(STORE_KEY, JSON.stringify(db));
   renderAll();
 }
@@ -61,8 +63,127 @@ function age(dob) {
   return a;
 }
 
+/* ============ Auth: doctor (super user) & staff roles ============ */
+// Device-level access control: passwords are salted + hashed, roles gate the UI.
+// This is a privacy screen for a shared office computer, not server-grade security.
+const SESSION_KEY = 'mindcare.session';
+const DOCTOR_ONLY_VIEWS = ['reports', 'data'];
+
+function currentUser() {
+  return db.users.find(u => u.id === sessionStorage.getItem(SESSION_KEY)) || null;
+}
+const isDoctor = () => currentUser()?.role === 'doctor';
+const isStaff = () => currentUser()?.role === 'staff';
+function requireDoctor() {
+  if (isDoctor()) return true;
+  toast('Doctor access required');
+  return false;
+}
+
+async function hashPassword(pw, salt) {
+  const bytes = new TextEncoder().encode(salt + ':' + pw);
+  if (crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  // FNV-1a fallback for non-secure contexts (e.g. file://) where WebCrypto is unavailable
+  let h = 2166136261;
+  for (const b of bytes) { h ^= b; h = Math.imul(h, 16777619); }
+  return 'fnv' + (h >>> 0).toString(16);
+}
+
+function renderAuth() {
+  const scr = document.getElementById('auth-screen');
+  const body = document.getElementById('auth-body');
+  if (currentUser()) { scr.classList.add('hidden'); applyRoleUI(); return; }
+  scr.classList.remove('hidden');
+  if (!db.users.length) {
+    body.innerHTML = `
+      <h2>Set up the doctor account</h2>
+      <p class="muted small">This super-user account has full access and manages staff logins.</p>
+      <form onsubmit="doSetup(event)">
+        <div class="form-row"><label>Your name<input class="input" name="name" required placeholder="Dr. …"></label></div>
+        <div class="form-row"><label>Password<input class="input" type="password" name="pw" required minlength="4"></label></div>
+        <div class="form-row"><label>Confirm password<input class="input" type="password" name="pw2" required minlength="4"></label></div>
+        <div class="auth-error" id="auth-error"></div>
+        <button class="btn btn-primary">Create account &amp; open MindCare</button>
+      </form>`;
+  } else {
+    const opts = db.users.slice()
+      .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'doctor' ? -1 : 1))
+      .map(u => `<option value="${u.id}">${esc(u.name)} (${u.role === 'doctor' ? 'Doctor' : 'Staff'})</option>`).join('');
+    body.innerHTML = `
+      <h2>Sign in</h2>
+      <form onsubmit="doLogin(event)">
+        <div class="form-row"><label>User<select class="input" name="userId">${opts}</select></label></div>
+        <div class="form-row"><label>Password<input class="input" type="password" name="pw" required autofocus></label></div>
+        <div class="auth-error" id="auth-error"></div>
+        <button class="btn btn-primary">Unlock</button>
+      </form>`;
+  }
+  setTimeout(() => body.querySelector('input')?.focus(), 50);
+}
+
+async function doSetup(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  if (f.get('pw') !== f.get('pw2')) {
+    document.getElementById('auth-error').textContent = 'Passwords do not match.';
+    return;
+  }
+  const salt = uid();
+  const user = { id: uid(), name: f.get('name').trim(), role: 'doctor', salt, hash: await hashPassword(f.get('pw'), salt) };
+  db.users.push(user);
+  sessionStorage.setItem(SESSION_KEY, user.id);
+  save();
+  renderAuth();
+  toast(`Welcome, ${user.name}`);
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const user = db.users.find(u => u.id === f.get('userId'));
+  if (!user || await hashPassword(f.get('pw'), user.salt) !== user.hash) {
+    document.getElementById('auth-error').textContent = 'Wrong password — try again.';
+    e.target.querySelector('[name="pw"]').select();
+    return;
+  }
+  sessionStorage.setItem(SESSION_KEY, user.id);
+  renderAuth();
+  renderAll();
+  toast(`Welcome back, ${user.name}`);
+}
+
+function lockApp() {
+  sessionStorage.removeItem(SESSION_KEY);
+  // Clear any generated PHI from print surfaces while locked
+  document.getElementById('report-sheet').innerHTML = '<p class="muted">Select a patient to generate a report.</p>';
+  document.getElementById('print-invoice').innerHTML = '';
+  closeModal();
+  showView('dashboard');
+  renderAuth();
+}
+
+function applyRoleUI() {
+  const u = currentUser();
+  const staff = u?.role === 'staff';
+  document.querySelectorAll('[data-doctor-only]').forEach(el => el.classList.toggle('hidden', staff));
+  const chip = document.getElementById('user-chip');
+  if (u) {
+    chip.classList.remove('hidden');
+    document.getElementById('user-name').textContent = u.name;
+    const roleEl = document.getElementById('user-role');
+    roleEl.textContent = u.role === 'doctor' ? 'Doctor' : 'Staff';
+    roleEl.className = 'badge ' + (u.role === 'doctor' ? 'badge-video' : 'badge-partial');
+  } else {
+    chip.classList.add('hidden');
+  }
+}
+
 /* ============ Navigation ============ */
 function showView(name) {
+  if (isStaff() && DOCTOR_ONLY_VIEWS.includes(name)) { toast('Doctor access required'); return; }
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById('view-' + name).classList.remove('hidden');
   const navKey = name === 'patient-detail' ? 'patients' : name; // detail view keeps Patients highlighted
@@ -199,8 +320,8 @@ function renderPatientDetail() {
     p.phone, p.email, p.insurance ? `Ins: ${p.insurance}` : null,
   ].filter(Boolean).join(' · ') || 'No demographics on file';
 
-  // Clinical records (newest first)
-  const recs = (p.records || []).slice().sort((x, y) => y.date.localeCompare(x.date));
+  // Clinical records (newest first) — never rendered for staff, not just hidden
+  const recs = isStaff() ? [] : (p.records || []).slice().sort((x, y) => y.date.localeCompare(x.date));
   document.getElementById('pd-records').innerHTML = recs.length ? recs.map(r => `
     <div class="record-entry">
       <div class="record-date">${fmtDate(r.date)}
@@ -230,8 +351,9 @@ function renderPatientDetail() {
     <div class="row"><div>Balance</div><b style="color:${billed - paid > 0 ? 'var(--danger)' : 'var(--ok)'}">${money(billed - paid)}</b></div>`;
 }
 
-/* ============ Clinical records ============ */
+/* ============ Clinical records (doctor only) ============ */
 function openRecordModal(recordId) {
+  if (!requireDoctor()) return;
   const p = patientById(currentPatientId);
   const r = recordId ? p.records.find(x => x.id === recordId) : {};
   openModal(recordId ? 'Edit clinical entry' : `New clinical entry — ${p.name}`, `
@@ -264,6 +386,7 @@ function openRecordModal(recordId) {
 
 function saveRecord(e, recordId) {
   e.preventDefault();
+  if (!requireDoctor()) return;
   const p = patientById(currentPatientId);
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (recordId) {
@@ -289,6 +412,7 @@ function insertNoteTemplate(btn, key) {
 }
 
 function deleteRecord(recordId) {
+  if (!requireDoctor()) return;
   const p = patientById(currentPatientId);
   if (!confirm('Delete this clinical entry?')) return;
   p.records = p.records.filter(x => x.id !== recordId);
@@ -728,6 +852,7 @@ function renderReportSelect() {
 }
 
 function generateReport(patientId) {
+  if (isStaff()) { toast('Doctor access required'); return; }
   renderReportSelect();
   const sheet = document.getElementById('report-sheet');
   const p = patientById(patientId);
@@ -814,8 +939,110 @@ function downloadReportPdf() {
   window.print();
 }
 
+/* ============ Users & access (doctor only) ============ */
+function renderUsers() {
+  const el = document.getElementById('user-list');
+  el.innerHTML = db.users.map(u => `<div class="row">
+    <div class="row-main">
+      <div class="row-title">${esc(u.name)}
+        <span class="badge ${u.role === 'doctor' ? 'badge-video' : 'badge-partial'}">${u.role === 'doctor' ? 'Doctor' : 'Staff'}</span>
+        ${currentUser()?.id === u.id ? '<span class="muted small">(you)</span>' : ''}
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-sm" onclick="openPasswordModal('${u.id}')">Reset password</button>
+      ${canDeleteUser(u) ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">Remove</button>` : ''}
+    </div>
+  </div>`).join('') || '<div class="empty">No users yet.</div>';
+}
+
+function canDeleteUser(u) {
+  if (u.role === 'staff') return true;
+  // never delete yourself or the last remaining doctor
+  return u.id !== currentUser()?.id && db.users.filter(x => x.role === 'doctor').length > 1;
+}
+
+function openUserModal() {
+  if (!requireDoctor()) return;
+  openModal('Add user', `
+    <form onsubmit="saveUser(event)">
+      <div class="form-row">
+        <label>Name *<input class="input" name="name" required></label>
+        <label>Role
+          <select class="input" name="role">
+            <option value="staff" selected>Staff</option>
+            <option value="doctor">Doctor (full access)</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Password *<input class="input" type="password" name="pw" required minlength="4"></label>
+        <label>Confirm *<input class="input" type="password" name="pw2" required minlength="4"></label>
+      </div>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary">Add user</button>
+      </div>
+    </form>`);
+}
+
+async function saveUser(e) {
+  e.preventDefault();
+  if (!requireDoctor()) return;
+  const f = new FormData(e.target);
+  if (f.get('pw') !== f.get('pw2')) { toast('Passwords do not match'); return; }
+  const salt = uid();
+  db.users.push({
+    id: uid(), name: f.get('name').trim(), role: f.get('role'),
+    salt, hash: await hashPassword(f.get('pw'), salt),
+  });
+  closeModal();
+  save();
+  toast('User added');
+}
+
+function openPasswordModal(userId) {
+  if (!requireDoctor()) return;
+  const u = db.users.find(x => x.id === userId);
+  openModal(`Reset password — ${u.name}`, `
+    <form onsubmit="savePassword(event, '${userId}')">
+      <div class="form-row">
+        <label>New password *<input class="input" type="password" name="pw" required minlength="4"></label>
+        <label>Confirm *<input class="input" type="password" name="pw2" required minlength="4"></label>
+      </div>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary">Set password</button>
+      </div>
+    </form>`);
+}
+
+async function savePassword(e, userId) {
+  e.preventDefault();
+  if (!requireDoctor()) return;
+  const f = new FormData(e.target);
+  if (f.get('pw') !== f.get('pw2')) { toast('Passwords do not match'); return; }
+  const u = db.users.find(x => x.id === userId);
+  u.salt = uid();
+  u.hash = await hashPassword(f.get('pw'), u.salt);
+  closeModal();
+  save();
+  toast(`Password updated for ${u.name}`);
+}
+
+function deleteUser(userId) {
+  if (!requireDoctor()) return;
+  const u = db.users.find(x => x.id === userId);
+  if (!canDeleteUser(u)) return;
+  if (!confirm(`Remove ${u.name}'s login? Patient data is not affected.`)) return;
+  db.users = db.users.filter(x => x.id !== userId);
+  save();
+  toast('User removed');
+}
+
 /* ============ Data & backup ============ */
 function exportData() {
+  if (!requireDoctor()) return;
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -826,6 +1053,7 @@ function exportData() {
 }
 
 function importData(e) {
+  if (!requireDoctor()) { e.target.value = ''; return; }
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -834,7 +1062,8 @@ function importData(e) {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data.patients)) throw new Error('Not a MindCare backup');
       if (confirm('Replace ALL current data with this backup?')) {
-        db = { patients: [], appointments: [], invoices: [], ...data };
+        // keep current logins/settings when the backup predates them
+        db = { patients: [], appointments: [], invoices: [], users: db.users, settings: db.settings, ...data };
         save();
         toast('Backup restored');
       }
@@ -848,13 +1077,14 @@ function importData(e) {
 }
 
 function wipeData() {
-  if (!confirm('Erase ALL data? Export a backup first if you want to keep anything.')) return;
+  if (!requireDoctor()) return;
+  if (!confirm('Erase ALL patient data? Export a backup first if you want to keep anything. (Logins and video settings are kept.)')) return;
   if (!confirm('Really erase everything? This cannot be undone.')) return;
-  db = { patients: [], appointments: [], invoices: [] };
+  db = { patients: [], appointments: [], invoices: [], users: db.users, settings: db.settings };
   currentPatientId = null;
   save();
   showView('dashboard');
-  toast('All data erased');
+  toast('All patient data erased');
 }
 
 /* ============ Sample data ============ */
@@ -872,6 +1102,8 @@ function loadSampleData() {
   const p3 = { id: uid(), name: 'Sarah Chen', dob: '1999-07-25', phone: '(555) 902-3317', email: 'sarah.chen@example.com', emergency: 'Wei Chen — (555) 902-3318', insurance: 'Aetna HMO', notes: 'University student; telehealth preferred.', created: todayIso(), records: []};
 
   db = {
+    users: db.users,
+    settings: db.settings,
     patients: [p1, p2, p3],
     appointments: [
       { id: uid(), patientId: p1.id, date: todayIso(), time: '10:00', duration: '50', type: 'video', link: videoRoomLink(), reason: 'Weekly CBT session', location: '' },
@@ -932,6 +1164,9 @@ function renderAll() {
   renderVideo();
   renderBilling();
   renderReportSelect();
+  renderUsers();
+  applyRoleUI();
 }
 
 renderAll();
+renderAuth();

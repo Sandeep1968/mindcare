@@ -9,6 +9,20 @@
 </head>
 <body>
 
+<!-- ============ LOGIN / LOCK SCREEN ============ -->
+<div id="auth-screen" class="auth-screen hidden">
+  <div class="auth-card">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div>
+        <div class="brand-name">MindCare</div>
+        <div class="brand-sub">Solo Practice Manager</div>
+      </div>
+    </div>
+    <div id="auth-body"></div>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- ============ LEFT SIDEBAR ============ -->
@@ -37,15 +51,20 @@
       <button class="nav-item" data-view="billing">
         <span class="nav-ico">💳</span> Billing &amp; Payments
       </button>
-      <button class="nav-item" data-view="reports">
+      <button class="nav-item" data-view="reports" data-doctor-only>
         <span class="nav-ico">📄</span> Health Reports
       </button>
-      <button class="nav-item" data-view="data">
+      <button class="nav-item" data-view="data" data-doctor-only>
         <span class="nav-ico">🗄️</span> Data &amp; Backup
       </button>
     </nav>
 
     <div class="sidebar-foot">
+      <div id="user-chip" class="user-chip hidden">
+        <span id="user-name"></span>
+        <span class="badge" id="user-role"></span>
+        <button class="btn btn-sm" onclick="lockApp()" title="Lock the app">Lock</button>
+      </div>
       <div class="privacy-note">🔒 All data stays on this device.</div>
     </div>
   </aside>
@@ -117,12 +136,12 @@
         <div class="btn-row">
           <button class="btn" onclick="editCurrentPatient()">Edit</button>
           <button class="btn" onclick="openApptModal(currentPatientId)">+ Appointment</button>
-          <button class="btn btn-primary" onclick="openRecordModal()">+ Clinical Entry</button>
+          <button class="btn btn-primary" data-doctor-only onclick="openRecordModal()">+ Clinical Entry</button>
         </div>
       </header>
 
       <div class="two-col">
-        <div class="card">
+        <div class="card" data-doctor-only>
           <h2>Clinical history <span class="muted small">(symptoms · diagnosis · notes)</span></h2>
           <div id="pd-records"></div>
         </div>
@@ -135,7 +154,7 @@
             <h2>Billing summary</h2>
             <div id="pd-billing"></div>
           </div>
-          <div class="card">
+          <div class="card" data-doctor-only>
             <h2>Report</h2>
             <p class="muted small">Generate a full health report for this patient.</p>
             <button class="btn btn-primary" onclick="generateReport(currentPatientId); showView('reports')">Open health report</button>
@@ -263,6 +282,13 @@
           <p class="muted">Your data lives only in this browser — back it up regularly</p>
         </div>
       </header>
+      <div class="card">
+        <h2>Users &amp; access</h2>
+        <p class="muted small">Doctor accounts have full access. Staff can manage patient demographics, scheduling,
+        video visits and billing — clinical entries, health reports, backups and user management stay doctor-only.</p>
+        <div id="user-list"></div>
+        <button class="btn btn-primary" onclick="openUserModal()">+ Add user</button>
+      </div>
       <div class="card">
         <h2>Backup</h2>
         <p class="muted small">Export all patients, appointments and invoices as a JSON file.</p>
