@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindCare — Practice Manager</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%230f766e%22/><text x=%2250%22 y=%2272%22 font-size=%2260%22 font-family=%22sans-serif%22 font-weight=%22bold%22 fill=%22white%22 text-anchor=%22middle%22>M</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ LEFT SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div>
+        <div class="brand-name">MindCare</div>
+        <div class="brand-sub">Solo Practice Manager</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="dashboard">
+        <span class="nav-ico">🏠</span> Dashboard
+      </button>
+      <button class="nav-item" data-view="patients">
+        <span class="nav-ico">🧑‍⚕️</span> Patients
+      </button>
+      <button class="nav-item" data-view="schedule">
+        <span class="nav-ico">📅</span> Schedule
+      </button>
+      <button class="nav-item" data-view="video">
+        <span class="nav-ico">🎥</span> Video Visits
+      </button>
+      <button class="nav-item" data-view="billing">
+        <span class="nav-ico">💳</span> Billing &amp; Payments
+      </button>
+      <button class="nav-item" data-view="reports">
+        <span class="nav-ico">📄</span> Health Reports
+      </button>
+      <button class="nav-item" data-view="data">
+        <span class="nav-ico">🗄️</span> Data &amp; Backup
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="privacy-note">🔒 All data stays on this device.</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main" id="main">
+
+    <!-- ===== Dashboard ===== -->
+    <section class="view" id="view-dashboard">
+      <header class="view-head">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="muted" id="dash-date"></p>
+        </div>
+        <button class="btn btn-primary" onclick="openApptModal()">+ New Appointment</button>
+      </header>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-num" id="stat-patients">0</div><div class="stat-label">Active patients</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-today">0</div><div class="stat-label">Appointments today</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-week">0</div><div class="stat-label">This week</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-due">$0</div><div class="stat-label">Outstanding balance</div></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h2>Today's appointments</h2>
+          <div id="dash-today-list"></div>
+        </div>
+        <div class="card">
+          <h2>Unpaid invoices</h2>
+          <div id="dash-unpaid-list"></div>
+        </div>
+      </div>
+
+      <div class="card" id="empty-state" style="display:none">
+        <h2>Welcome 👋</h2>
+        <p class="muted">You have no data yet. Add your first patient, or load sample data to explore the app.</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="openPatientModal()">+ Add first patient</button>
+          <button class="btn" onclick="loadSampleData()">Load sample data</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Patients ===== -->
+    <section class="view hidden" id="view-patients">
+      <header class="view-head">
+        <div>
+          <h1>Patients</h1>
+          <p class="muted">Demographics, symptoms &amp; diagnoses</p>
+        </div>
+        <button class="btn btn-primary" onclick="openPatientModal()">+ New Patient</button>
+      </header>
+      <div class="card">
+        <input class="input search" id="patient-search" placeholder="Search patients by name, phone, or email…" oninput="renderPatients()">
+        <div id="patient-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Patient detail ===== -->
+    <section class="view hidden" id="view-patient-detail">
+      <header class="view-head">
+        <div>
+          <button class="btn btn-ghost" onclick="showView('patients')">← All patients</button>
+          <h1 id="pd-name" style="margin-top:8px"></h1>
+          <p class="muted" id="pd-meta"></p>
+        </div>
+        <div class="btn-row">
+          <button class="btn" onclick="editCurrentPatient()">Edit</button>
+          <button class="btn" onclick="openApptModal(currentPatientId)">+ Appointment</button>
+          <button class="btn btn-primary" onclick="openRecordModal()">+ Clinical Entry</button>
+        </div>
+      </header>
+
+      <div class="two-col">
+        <div class="card">
+          <h2>Clinical history <span class="muted small">(symptoms · diagnosis · notes)</span></h2>
+          <div id="pd-records"></div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>Upcoming visits</h2>
+            <div id="pd-appts"></div>
+          </div>
+          <div class="card">
+            <h2>Billing summary</h2>
+            <div id="pd-billing"></div>
+          </div>
+          <div class="card">
+            <h2>Report</h2>
+            <p class="muted small">Generate a full health report for this patient.</p>
+            <button class="btn btn-primary" onclick="generateReport(currentPatientId); showView('reports')">Open health report</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Schedule ===== -->
+    <section class="view hidden" id="view-schedule">
+      <header class="view-head">
+        <div>
+          <h1>Schedule</h1>
+          <p class="muted">Video and in-person visits</p>
+        </div>
+        <button class="btn btn-primary" onclick="openApptModal()">+ New Appointment</button>
+      </header>
+      <div class="card">
+        <div class="btn-row filter-row">
+          <button class="chip active" data-filter="upcoming" onclick="setApptFilter('upcoming', this)">Upcoming</button>
+          <button class="chip" data-filter="today" onclick="setApptFilter('today', this)">Today</button>
+          <button class="chip" data-filter="past" onclick="setApptFilter('past', this)">Past</button>
+          <button class="chip" data-filter="all" onclick="setApptFilter('all', this)">All</button>
+        </div>
+        <div id="appt-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Video visits ===== -->
+    <section class="view hidden" id="view-video">
+      <header class="view-head">
+        <div>
+          <h1>Video Visits</h1>
+          <p class="muted">One click starts your Zoom meeting — link is copied for your patient</p>
+        </div>
+        <button class="btn btn-primary" onclick="startInstantSession()">🎥 Start session now</button>
+      </header>
+      <div class="card">
+        <h2>Video settings</h2>
+        <p class="muted small">Paste your Zoom <b>Personal Meeting Room</b> link once (Zoom app → Meetings → Personal Room → Invite → Copy Link).
+        Every video visit then activates that Zoom meeting the moment you press 🎥.
+        If the Zoom app is installed it opens directly; otherwise the meeting opens in the browser.</p>
+        <div class="form-row">
+          <label>Provider
+            <select class="input" id="video-provider">
+              <option value="zoom">Zoom (personal meeting room)</option>
+              <option value="jitsi">Jitsi Meet (free, no account)</option>
+            </select>
+          </label>
+          <label>Zoom personal meeting link
+            <input class="input" id="zoom-link" placeholder="https://zoom.us/j/1234567890?pwd=…">
+          </label>
+        </div>
+        <div class="btn-row" style="align-items:center">
+          <button class="btn btn-primary" onclick="saveVideoSettings()">Save video settings</button>
+          <span class="muted small" id="video-settings-status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Upcoming video appointments</h2>
+        <div id="video-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Billing ===== -->
+    <section class="view hidden" id="view-billing">
+      <header class="view-head">
+        <div>
+          <h1>Billing &amp; Payments</h1>
+          <p class="muted">Invoices, payments and balances</p>
+        </div>
+        <button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button>
+      </header>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-num" id="bill-total">$0</div><div class="stat-label">Billed (all time)</div></div>
+        <div class="stat-card"><div class="stat-num" id="bill-paid">$0</div><div class="stat-label">Collected</div></div>
+        <div class="stat-card"><div class="stat-num" id="bill-due">$0</div><div class="stat-label">Outstanding</div></div>
+      </div>
+      <div class="card">
+        <div id="invoice-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Reports ===== -->
+    <section class="view hidden" id="view-reports">
+      <header class="view-head">
+        <div>
+          <h1>Health Reports</h1>
+          <p class="muted">On-screen report with PDF download</p>
+        </div>
+      </header>
+      <div class="card no-print">
+        <div class="form-row">
+          <label>Patient
+            <select class="input" id="report-patient" onchange="generateReport(this.value)"></select>
+          </label>
+          <div class="btn-row" style="align-self:flex-end">
+            <button class="btn btn-primary" onclick="downloadReportPdf()">⬇ Download PDF</button>
+          </div>
+        </div>
+      </div>
+      <div class="card report-sheet" id="report-sheet">
+        <p class="muted">Select a patient to generate a report.</p>
+      </div>
+    </section>
+
+    <!-- ===== Data & Backup ===== -->
+    <section class="view hidden" id="view-data">
+      <header class="view-head">
+        <div>
+          <h1>Data &amp; Backup</h1>
+          <p class="muted">Your data lives only in this browser — back it up regularly</p>
+        </div>
+      </header>
+      <div class="card">
+        <h2>Backup</h2>
+        <p class="muted small">Export all patients, appointments and invoices as a JSON file.</p>
+        <button class="btn btn-primary" onclick="exportData()">⬇ Export backup</button>
+      </div>
+      <div class="card">
+        <h2>Restore</h2>
+        <p class="muted small">Import a previously exported backup file. This replaces current data.</p>
+        <input type="file" id="import-file" accept=".json" onchange="importData(event)">
+      </div>
+      <div class="card danger-card">
+        <h2>Danger zone</h2>
+        <p class="muted small">Erase everything stored by this app in the browser.</p>
+        <button class="btn btn-danger" onclick="wipeData()">Erase all data</button>
+      </div>
+      <div class="card">
+        <h2>Privacy &amp; compliance notes</h2>
+        <ul class="notes-list">
+          <li>Data is stored in your browser's local storage on this device only — nothing is sent to a server.</li>
+          <li>For real clinical use with protected health information (PHI), use an encrypted device, a private OS account, and regular encrypted backups.</li>
+          <li>Video sessions use Jitsi Meet links. For HIPAA-covered practice, use a provider that signs a BAA (e.g. Zoom for Healthcare, doxy.me) and paste that link into the appointment instead.</li>
+          <li>This tool is a lightweight organizer, not a certified EHR. Verify billing codes and documentation against your local regulations.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-backdrop hidden" id="modal-backdrop" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modal">
+    <div class="modal-head">
+      <h2 id="modal-title">Modal</h2>
+      <button class="btn btn-ghost" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
