@@ -224,6 +224,11 @@ label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font
 .auth-card .brand-sub { color: var(--ink-soft); opacity: 1; }
 .auth-card h2 { font-size: 15px; }
 .auth-error { color: var(--danger); font-size: 12.5px; min-height: 17px; margin: 6px 0 0; }
+.remember {
+  flex-direction: row; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; margin-top: 2px;
+}
+.remember input { width: auto; accent-color: var(--accent); }
 .auth-card .btn-primary { width: 100%; margin-top: 10px; padding: 10px; }
 
 .user-chip {

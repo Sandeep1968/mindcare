@@ -75,7 +75,14 @@ const ROLE_RANK = { practitioner: 0, staff: 1, patient: 2 };
 const ROLE_BADGE = { practitioner: 'badge-video', staff: 'badge-partial', patient: 'badge-inperson' };
 
 function currentUser() {
-  return db.users.find(u => u.id === sessionStorage.getItem(SESSION_KEY)) || null;
+  // sessionStorage = this tab's login; localStorage = "keep me signed in on this device"
+  const id = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+  return db.users.find(u => u.id === id) || null;
+}
+function setSession(id, persist) {
+  sessionStorage.setItem(SESSION_KEY, id);
+  if (persist) localStorage.setItem(SESSION_KEY, id);
+  else localStorage.removeItem(SESSION_KEY);
 }
 const isPractitioner = () => currentUser()?.role === 'practitioner';
 const isStaff = () => currentUser()?.role === 'staff';
@@ -90,9 +97,10 @@ function requireStaffAccess() { // practitioner or staff — blocks patient logi
   return true;
 }
 
-async function hashPassword(pw, salt) {
+async function hashPassword(pw, salt, algo) {
   const bytes = new TextEncoder().encode(salt + ':' + pw);
-  if (crypto.subtle) {
+  const useFnv = algo === 'fnv' || (!algo && !crypto.subtle);
+  if (!useFnv && crypto.subtle) {
     const buf = await crypto.subtle.digest('SHA-256', bytes);
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
@@ -102,10 +110,22 @@ async function hashPassword(pw, salt) {
   return 'fnv' + (h >>> 0).toString(16);
 }
 
+// Verify with the SAME algorithm the stored hash was created with, so an account
+// created under the fnv fallback still works when opened in a WebCrypto context.
+async function verifyPassword(pw, user) {
+  const algo = user.hash.startsWith('fnv') ? 'fnv' : 'sha';
+  return (await hashPassword(pw, user.salt, algo)) === user.hash;
+}
+
 function renderAuth() {
   const scr = document.getElementById('auth-screen');
   const body = document.getElementById('auth-body');
-  if (currentUser()) { scr.classList.add('hidden'); applyRoleUI(); return; }
+  if (currentUser()) {
+    scr.classList.add('hidden');
+    body.innerHTML = ''; // never leave the typed password sitting in the DOM
+    applyRoleUI();
+    return;
+  }
   scr.classList.remove('hidden');
   if (!db.users.length) {
     body.innerHTML = `
@@ -127,6 +147,7 @@ function renderAuth() {
       <form onsubmit="doLogin(event)">
         <div class="form-row"><label>User<select class="input" name="userId">${opts}</select></label></div>
         <div class="form-row"><label>Password<input class="input" type="password" name="pw" required autofocus></label></div>
+        <label class="remember"><input type="checkbox" name="remember"> Keep me signed in on this device</label>
         <div class="auth-error" id="auth-error"></div>
         <button class="btn btn-primary">Unlock</button>
       </form>`;
@@ -141,10 +162,14 @@ async function doSetup(e) {
     document.getElementById('auth-error').textContent = 'Passwords do not match.';
     return;
   }
+  if ((f.get('pw') || '').length < 4) {
+    document.getElementById('auth-error').textContent = 'Password must be at least 4 characters.';
+    return;
+  }
   const salt = uid();
   const user = { id: uid(), name: f.get('name').trim(), role: 'practitioner', salt, hash: await hashPassword(f.get('pw'), salt) };
   db.users.push(user);
-  sessionStorage.setItem(SESSION_KEY, user.id);
+  setSession(user.id, false);
   save();
   renderAuth();
   toast(`Welcome, ${user.name}`);
@@ -154,12 +179,12 @@ async function doLogin(e) {
   e.preventDefault();
   const f = new FormData(e.target);
   const user = db.users.find(u => u.id === f.get('userId'));
-  if (!user || await hashPassword(f.get('pw'), user.salt) !== user.hash) {
+  if (!user || !(await verifyPassword(f.get('pw'), user))) {
     document.getElementById('auth-error').textContent = 'Wrong password — try again.';
     e.target.querySelector('[name="pw"]').select();
     return;
   }
-  sessionStorage.setItem(SESSION_KEY, user.id);
+  setSession(user.id, f.get('remember') === 'on');
   renderAuth();
   renderAll();
   showView(user.role === 'patient' ? 'portal' : 'dashboard');
@@ -168,6 +193,7 @@ async function doLogin(e) {
 
 function lockApp() {
   sessionStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_KEY); // Lock always ends a "keep me signed in" session too
   // Clear any generated PHI from print surfaces while locked
   document.getElementById('report-sheet').innerHTML = '<p class="muted">Select a patient to generate a report.</p>';
   document.getElementById('print-invoice').innerHTML = '';
