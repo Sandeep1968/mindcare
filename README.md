@@ -20,7 +20,7 @@ then visit http://localhost:8742.
 
 | Module | What it does |
 |---|---|
-| Login & roles | Doctor (super user) and Staff accounts with salted+hashed passwords. Staff see patients, scheduling, video and billing; clinical entries, health reports, backups and user management are doctor-only. Lock button ends the session. |
+| Login & roles | Practitioner (super user), Staff, and Patient accounts with salted+hashed passwords. Staff see patients, scheduling, video and billing; clinical entries, health reports, backups and user management are practitioner-only. Patient logins are linked to one patient record and see a portal with only their own visits (join video, copy link) and billing. Lock button ends the session. |
 | Dashboard | Today's appointments, week ahead, outstanding balances |
 | Patients | Demographics, emergency contact, insurance, searchable list |
 | Clinical entries | Dated symptom + diagnosis + session-note records per patient |

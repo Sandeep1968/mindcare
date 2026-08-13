@@ -7,6 +7,8 @@ const LEGACY_STORE_KEY = 'theradesk.v1'; // pre-rebrand key; migrated on first l
 let db = load();
 db.settings = { provider: 'zoom', zoomLink: '', ...(db.settings || {}) };
 db.users = db.users || [];
+// migrate accounts created before the doctor -> practitioner rename
+db.users.forEach(u => { if (u.role === 'doctor') u.role = 'practitioner'; });
 let currentPatientId = null;
 let apptFilter = 'upcoming';
 
@@ -63,21 +65,29 @@ function age(dob) {
   return a;
 }
 
-/* ============ Auth: doctor (super user) & staff roles ============ */
+/* ============ Auth: practitioner (super user), staff & patient roles ============ */
 // Device-level access control: passwords are salted + hashed, roles gate the UI.
 // This is a privacy screen for a shared office computer, not server-grade security.
 const SESSION_KEY = 'mindcare.session';
-const DOCTOR_ONLY_VIEWS = ['reports', 'data'];
+const PRACTITIONER_ONLY_VIEWS = ['reports', 'data'];
+const ROLE_LABEL = { practitioner: 'Practitioner', staff: 'Staff', patient: 'Patient' };
+const ROLE_RANK = { practitioner: 0, staff: 1, patient: 2 };
+const ROLE_BADGE = { practitioner: 'badge-video', staff: 'badge-partial', patient: 'badge-inperson' };
 
 function currentUser() {
   return db.users.find(u => u.id === sessionStorage.getItem(SESSION_KEY)) || null;
 }
-const isDoctor = () => currentUser()?.role === 'doctor';
+const isPractitioner = () => currentUser()?.role === 'practitioner';
 const isStaff = () => currentUser()?.role === 'staff';
-function requireDoctor() {
-  if (isDoctor()) return true;
-  toast('Doctor access required');
+const isPatient = () => currentUser()?.role === 'patient';
+function requirePractitioner() {
+  if (isPractitioner()) return true;
+  toast('Practitioner access required');
   return false;
+}
+function requireStaffAccess() { // practitioner or staff — blocks patient logins
+  if (isPatient()) { toast('Not available on patient logins'); return false; }
+  return true;
 }
 
 async function hashPassword(pw, salt) {
@@ -99,8 +109,8 @@ function renderAuth() {
   scr.classList.remove('hidden');
   if (!db.users.length) {
     body.innerHTML = `
-      <h2>Set up the doctor account</h2>
-      <p class="muted small">This super-user account has full access and manages staff logins.</p>
+      <h2>Set up the practitioner account</h2>
+      <p class="muted small">This super-user account has full access and manages staff and patient logins.</p>
       <form onsubmit="doSetup(event)">
         <div class="form-row"><label>Your name<input class="input" name="name" required placeholder="Dr. …"></label></div>
         <div class="form-row"><label>Password<input class="input" type="password" name="pw" required minlength="4"></label></div>
@@ -110,8 +120,8 @@ function renderAuth() {
       </form>`;
   } else {
     const opts = db.users.slice()
-      .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'doctor' ? -1 : 1))
-      .map(u => `<option value="${u.id}">${esc(u.name)} (${u.role === 'doctor' ? 'Doctor' : 'Staff'})</option>`).join('');
+      .sort((a, b) => (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name))
+      .map(u => `<option value="${u.id}">${esc(u.name)} (${ROLE_LABEL[u.role] || u.role})</option>`).join('');
     body.innerHTML = `
       <h2>Sign in</h2>
       <form onsubmit="doLogin(event)">
@@ -132,7 +142,7 @@ async function doSetup(e) {
     return;
   }
   const salt = uid();
-  const user = { id: uid(), name: f.get('name').trim(), role: 'doctor', salt, hash: await hashPassword(f.get('pw'), salt) };
+  const user = { id: uid(), name: f.get('name').trim(), role: 'practitioner', salt, hash: await hashPassword(f.get('pw'), salt) };
   db.users.push(user);
   sessionStorage.setItem(SESSION_KEY, user.id);
   save();
@@ -152,6 +162,7 @@ async function doLogin(e) {
   sessionStorage.setItem(SESSION_KEY, user.id);
   renderAuth();
   renderAll();
+  showView(user.role === 'patient' ? 'portal' : 'dashboard');
   toast(`Welcome back, ${user.name}`);
 }
 
@@ -167,15 +178,23 @@ function lockApp() {
 
 function applyRoleUI() {
   const u = currentUser();
-  const staff = u?.role === 'staff';
-  document.querySelectorAll('[data-doctor-only]').forEach(el => el.classList.toggle('hidden', staff));
+  const patient = u?.role === 'patient';
+  // practitioner-only elements hide for staff and patients
+  document.querySelectorAll('[data-doctor-only]').forEach(el =>
+    el.classList.toggle('hidden', !!u && u.role !== 'practitioner'));
+  // patients see only the portal nav item; everyone else never sees it
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.dataset.view === 'portal') el.classList.toggle('hidden', !patient);
+    else if (!el.hasAttribute('data-doctor-only')) el.classList.toggle('hidden', patient);
+    else if (patient) el.classList.add('hidden');
+  });
   const chip = document.getElementById('user-chip');
   if (u) {
     chip.classList.remove('hidden');
     document.getElementById('user-name').textContent = u.name;
     const roleEl = document.getElementById('user-role');
-    roleEl.textContent = u.role === 'doctor' ? 'Doctor' : 'Staff';
-    roleEl.className = 'badge ' + (u.role === 'doctor' ? 'badge-video' : 'badge-partial');
+    roleEl.textContent = ROLE_LABEL[u.role] || u.role;
+    roleEl.className = 'badge ' + (ROLE_BADGE[u.role] || 'badge-partial');
   } else {
     chip.classList.add('hidden');
   }
@@ -183,7 +202,8 @@ function applyRoleUI() {
 
 /* ============ Navigation ============ */
 function showView(name) {
-  if (isStaff() && DOCTOR_ONLY_VIEWS.includes(name)) { toast('Doctor access required'); return; }
+  if (isPatient() && name !== 'portal') { toast('Patient logins can only view their own visits and billing'); return; }
+  if (isStaff() && PRACTITIONER_ONLY_VIEWS.includes(name)) { toast('Practitioner access required'); return; }
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById('view-' + name).classList.remove('hidden');
   const navKey = name === 'patient-detail' ? 'patients' : name; // detail view keeps Patients highlighted
@@ -227,6 +247,7 @@ function patientOptions(selectedId) {
 
 /* ============ Patients ============ */
 function openPatientModal(id) {
+  if (!requireStaffAccess()) return;
   const p = id ? patientById(id) : {};
   openModal(id ? 'Edit patient' : 'New patient', `
     <form onsubmit="savePatient(event, '${id || ''}')">
@@ -277,6 +298,7 @@ function deletePatient(id) {
   db.patients = db.patients.filter(x => x.id !== id);
   db.appointments = db.appointments.filter(a => a.patientId !== id);
   db.invoices = db.invoices.filter(i => i.patientId !== id);
+  db.users = db.users.filter(u => u.patientId !== id); // remove the patient's portal login too
   closeModal();
   save();
   showView('patients');
@@ -320,8 +342,8 @@ function renderPatientDetail() {
     p.phone, p.email, p.insurance ? `Ins: ${p.insurance}` : null,
   ].filter(Boolean).join(' · ') || 'No demographics on file';
 
-  // Clinical records (newest first) — never rendered for staff, not just hidden
-  const recs = isStaff() ? [] : (p.records || []).slice().sort((x, y) => y.date.localeCompare(x.date));
+  // Clinical records (newest first) — rendered only for the practitioner, not just hidden
+  const recs = !isPractitioner() ? [] : (p.records || []).slice().sort((x, y) => y.date.localeCompare(x.date));
   document.getElementById('pd-records').innerHTML = recs.length ? recs.map(r => `
     <div class="record-entry">
       <div class="record-date">${fmtDate(r.date)}
@@ -353,7 +375,7 @@ function renderPatientDetail() {
 
 /* ============ Clinical records (doctor only) ============ */
 function openRecordModal(recordId) {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const p = patientById(currentPatientId);
   const r = recordId ? p.records.find(x => x.id === recordId) : {};
   openModal(recordId ? 'Edit clinical entry' : `New clinical entry — ${p.name}`, `
@@ -386,7 +408,7 @@ function openRecordModal(recordId) {
 
 function saveRecord(e, recordId) {
   e.preventDefault();
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const p = patientById(currentPatientId);
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (recordId) {
@@ -412,7 +434,7 @@ function insertNoteTemplate(btn, key) {
 }
 
 function deleteRecord(recordId) {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const p = patientById(currentPatientId);
   if (!confirm('Delete this clinical entry?')) return;
   p.records = p.records.filter(x => x.id !== recordId);
@@ -429,6 +451,7 @@ function videoRoomLink() {
 }
 
 function openApptModal(patientId, apptId) {
+  if (!requireStaffAccess()) return;
   if (!db.patients.length) { toast('Add a patient first'); openPatientModal(); return; }
   const a = apptId ? db.appointments.find(x => x.id === apptId) : {};
   openModal(apptId ? 'Edit appointment' : 'New appointment', `
@@ -620,6 +643,7 @@ function copyLink(apptId) {
   }
 }
 function startInstantSession() {
+  if (!requireStaffAccess()) return;
   if (db.settings.provider === 'zoom' && !db.settings.zoomLink) {
     showView('video');
     document.getElementById('zoom-link').focus();
@@ -635,6 +659,7 @@ function startInstantSession() {
 }
 
 function saveVideoSettings() {
+  if (!requireStaffAccess()) return;
   const provider = document.getElementById('video-provider').value;
   const zoomLink = document.getElementById('zoom-link').value.trim();
   if (provider === 'zoom' && zoomLink && !/^https:\/\/([\w-]+\.)*zoom\.us\//.test(zoomLink)) {
@@ -681,6 +706,7 @@ function invoiceStatus(inv) {
 }
 
 function openInvoiceModal(invoiceId) {
+  if (!requireStaffAccess()) return;
   if (!db.patients.length) { toast('Add a patient first'); openPatientModal(); return; }
   const inv = invoiceId ? db.invoices.find(x => x.id === invoiceId) : {};
   openModal(invoiceId ? 'Edit invoice' : 'New invoice', `
@@ -725,6 +751,7 @@ function deleteInvoice(invoiceId) {
 }
 
 function openPaymentModal(invoiceId) {
+  if (!requireStaffAccess()) return;
   const inv = db.invoices.find(x => x.id === invoiceId);
   const due = Number(inv.amount) - paidAmount(inv);
   openModal('Record payment', `
@@ -852,7 +879,7 @@ function renderReportSelect() {
 }
 
 function generateReport(patientId) {
-  if (isStaff()) { toast('Doctor access required'); return; }
+  if (currentUser() && !isPractitioner()) { toast('Practitioner access required'); return; }
   renderReportSelect();
   const sheet = document.getElementById('report-sheet');
   const p = patientById(patientId);
@@ -939,13 +966,71 @@ function downloadReportPdf() {
   window.print();
 }
 
-/* ============ Users & access (doctor only) ============ */
+/* ============ Patient portal ============ */
+// What a patient login sees: their own visits (join video, copy link) and billing. Read-only.
+function renderPortal() {
+  const el = document.getElementById('portal-body');
+  const u = currentUser();
+  if (u?.role !== 'patient') { el.innerHTML = ''; return; }
+  const p = patientById(u.patientId);
+  const title = document.getElementById('portal-title');
+  if (!p) {
+    title.textContent = 'My visits';
+    el.innerHTML = '<div class="card"><p class="muted">Your login is not linked to a patient record yet — please contact the practice.</p></div>';
+    return;
+  }
+  title.textContent = `Hello, ${p.name.split(' ')[0]}`;
+  const t = todayIso();
+  const mine = db.appointments.filter(a => a.patientId === p.id);
+  const upcoming = mine.filter(a => a.date >= t).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const past = mine.filter(a => a.date < t).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time)).slice(0, 5);
+  const invs = db.invoices.filter(i => i.patientId === p.id).sort((x, y) => y.date.localeCompare(x.date));
+  const billed = invs.reduce((s, i) => s + Number(i.amount), 0);
+  const paid = invs.reduce((s, i) => s + paidAmount(i), 0);
+
+  const visitRow = (a, joinable) => {
+    const isVideo = a.type !== 'in-person';
+    return `<div class="row">
+      <div class="row-main">
+        <div class="row-title">${fmtDate(a.date)} · ${fmtTime(a.time)}
+          <span class="badge ${isVideo ? 'badge-video' : 'badge-inperson'}">${isVideo ? '🎥 Video' : '🏢 In person'}</span></div>
+        <div class="row-sub">${esc(a.duration || 50)} min${a.reason ? ' · ' + esc(a.reason) : ''}${!isVideo && a.location ? ' · 📍 ' + esc(a.location) : ''}</div>
+      </div>
+      ${joinable && isVideo && a.link ? `<div class="btn-row">
+        <button class="btn btn-sm btn-primary" onclick="joinVideo('${a.id}')">🎥 Join</button>
+        <button class="btn btn-sm" onclick="copyLink('${a.id}')">Copy link</button></div>` : ''}
+    </div>`;
+  };
+
+  el.innerHTML = `
+    <div class="card"><h2>Upcoming visits</h2>
+      ${upcoming.length ? upcoming.map(a => visitRow(a, true)).join('') : '<div class="empty">No upcoming visits scheduled — contact the practice to book one.</div>'}
+    </div>
+    <div class="card"><h2>Recent visits</h2>
+      ${past.length ? past.map(a => visitRow(a, false)).join('') : '<div class="empty">No past visits.</div>'}
+    </div>
+    <div class="card"><h2>My billing</h2>
+      ${invs.map(inv => {
+        const st = invoiceStatus(inv);
+        const badge = { paid: 'badge-paid', partial: 'badge-partial', unpaid: 'badge-unpaid' }[st];
+        const lbl = { paid: 'Paid', partial: 'Partially paid', unpaid: 'Unpaid' }[st];
+        return `<div class="row"><div class="row-main">
+          <div class="row-title">${money(inv.amount)} <span class="badge ${badge}">${lbl}</span></div>
+          <div class="row-sub">${fmtDate(inv.date)} · ${esc(inv.description)}</div></div></div>`;
+      }).join('') || '<div class="empty">No invoices.</div>'}
+      ${invs.length ? `<div class="row"><div><b>Balance due</b></div>
+        <b style="color:${billed - paid > 0 ? 'var(--danger)' : 'var(--ok)'}">${money(billed - paid)}</b></div>` : ''}
+    </div>`;
+}
+
+/* ============ Users & access (practitioner only) ============ */
 function renderUsers() {
   const el = document.getElementById('user-list');
   el.innerHTML = db.users.map(u => `<div class="row">
     <div class="row-main">
       <div class="row-title">${esc(u.name)}
-        <span class="badge ${u.role === 'doctor' ? 'badge-video' : 'badge-partial'}">${u.role === 'doctor' ? 'Doctor' : 'Staff'}</span>
+        <span class="badge ${ROLE_BADGE[u.role] || 'badge-partial'}">${ROLE_LABEL[u.role] || u.role}</span>
+        ${u.role === 'patient' ? `<span class="muted small">→ ${esc(patientName(u.patientId))}</span>` : ''}
         ${currentUser()?.id === u.id ? '<span class="muted small">(you)</span>' : ''}
       </div>
     </div>
@@ -957,22 +1042,28 @@ function renderUsers() {
 }
 
 function canDeleteUser(u) {
-  if (u.role === 'staff') return true;
-  // never delete yourself or the last remaining doctor
-  return u.id !== currentUser()?.id && db.users.filter(x => x.role === 'doctor').length > 1;
+  if (u.role !== 'practitioner') return true;
+  // never delete yourself or the last remaining practitioner
+  return u.id !== currentUser()?.id && db.users.filter(x => x.role === 'practitioner').length > 1;
 }
 
 function openUserModal() {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   openModal('Add user', `
     <form onsubmit="saveUser(event)">
       <div class="form-row">
         <label>Name *<input class="input" name="name" required></label>
         <label>Role
-          <select class="input" name="role">
+          <select class="input" name="role" onchange="document.getElementById('patient-link-wrap').style.display = this.value==='patient' ? '' : 'none'">
             <option value="staff" selected>Staff</option>
-            <option value="doctor">Doctor (full access)</option>
+            <option value="patient">Patient (own visits &amp; billing only)</option>
+            <option value="practitioner">Practitioner (full access)</option>
           </select>
+        </label>
+      </div>
+      <div class="form-row" id="patient-link-wrap" style="display:none">
+        <label>Linked patient record *
+          <select class="input" name="patientId">${patientOptions()}</select>
         </label>
       </div>
       <div class="form-row">
@@ -988,12 +1079,15 @@ function openUserModal() {
 
 async function saveUser(e) {
   e.preventDefault();
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const f = new FormData(e.target);
   if (f.get('pw') !== f.get('pw2')) { toast('Passwords do not match'); return; }
+  const role = f.get('role');
+  const patientId = role === 'patient' ? f.get('patientId') : undefined;
+  if (role === 'patient' && !patientId) { toast('Choose the patient record this login belongs to'); return; }
   const salt = uid();
   db.users.push({
-    id: uid(), name: f.get('name').trim(), role: f.get('role'),
+    id: uid(), name: f.get('name').trim(), role, patientId,
     salt, hash: await hashPassword(f.get('pw'), salt),
   });
   closeModal();
@@ -1002,7 +1096,7 @@ async function saveUser(e) {
 }
 
 function openPasswordModal(userId) {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const u = db.users.find(x => x.id === userId);
   openModal(`Reset password — ${u.name}`, `
     <form onsubmit="savePassword(event, '${userId}')">
@@ -1019,7 +1113,7 @@ function openPasswordModal(userId) {
 
 async function savePassword(e, userId) {
   e.preventDefault();
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const f = new FormData(e.target);
   if (f.get('pw') !== f.get('pw2')) { toast('Passwords do not match'); return; }
   const u = db.users.find(x => x.id === userId);
@@ -1031,7 +1125,7 @@ async function savePassword(e, userId) {
 }
 
 function deleteUser(userId) {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const u = db.users.find(x => x.id === userId);
   if (!canDeleteUser(u)) return;
   if (!confirm(`Remove ${u.name}'s login? Patient data is not affected.`)) return;
@@ -1042,7 +1136,7 @@ function deleteUser(userId) {
 
 /* ============ Data & backup ============ */
 function exportData() {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1053,7 +1147,7 @@ function exportData() {
 }
 
 function importData(e) {
-  if (!requireDoctor()) { e.target.value = ''; return; }
+  if (!requirePractitioner()) { e.target.value = ''; return; }
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1077,7 +1171,7 @@ function importData(e) {
 }
 
 function wipeData() {
-  if (!requireDoctor()) return;
+  if (!requirePractitioner()) return;
   if (!confirm('Erase ALL patient data? Export a backup first if you want to keep anything. (Logins and video settings are kept.)')) return;
   if (!confirm('Really erase everything? This cannot be undone.')) return;
   db = { patients: [], appointments: [], invoices: [], users: db.users, settings: db.settings };
@@ -1165,6 +1259,7 @@ function renderAll() {
   renderBilling();
   renderReportSelect();
   renderUsers();
+  renderPortal();
   applyRoleUI();
 }
 

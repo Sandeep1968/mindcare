@@ -57,6 +57,9 @@
       <button class="nav-item" data-view="data" data-doctor-only>
         <span class="nav-ico">🗄️</span> Data &amp; Backup
       </button>
+      <button class="nav-item hidden" data-view="portal">
+        <span class="nav-ico">🧍</span> My Visits &amp; Billing
+      </button>
     </nav>
 
     <div class="sidebar-foot">
@@ -274,6 +277,17 @@
       </div>
     </section>
 
+    <!-- ===== Patient portal ===== -->
+    <section class="view hidden" id="view-portal">
+      <header class="view-head">
+        <div>
+          <h1 id="portal-title">My visits</h1>
+          <p class="muted">Your appointments and billing with this practice</p>
+        </div>
+      </header>
+      <div id="portal-body"></div>
+    </section>
+
     <!-- ===== Data & Backup ===== -->
     <section class="view hidden" id="view-data">
       <header class="view-head">
@@ -284,8 +298,10 @@
       </header>
       <div class="card">
         <h2>Users &amp; access</h2>
-        <p class="muted small">Doctor accounts have full access. Staff can manage patient demographics, scheduling,
-        video visits and billing — clinical entries, health reports, backups and user management stay doctor-only.</p>
+        <p class="muted small">Three roles: <b>Practitioner</b> (super user — everything), <b>Staff</b> (patient demographics,
+        scheduling, video visits, billing), and <b>Patient</b> (a portal login linked to one patient record — sees only
+        their own visits and billing, can join their video sessions). Clinical entries, health reports, backups and
+        user management stay practitioner-only.</p>
         <div id="user-list"></div>
         <button class="btn btn-primary" onclick="openUserModal()">+ Add user</button>
       </div>
