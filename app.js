@@ -1088,9 +1088,12 @@ function openUserModal() {
         </label>
       </div>
       <div class="form-row" id="patient-link-wrap" style="display:none">
-        <label>Linked patient record *
-          <select class="input" name="patientId">${patientOptions()}</select>
-        </label>
+        ${db.patients.length
+          ? `<label>Linked patient record *
+              <select class="input" name="patientId" onchange="autofillPatientName(this)">${patientOptions()}</select>
+            </label>`
+          : `<div class="empty">⚠ No patient records exist yet. First add the patient under
+              <b>Patients → + New Patient</b>, then come back here to create their login.</div>`}
       </div>
       <div class="form-row">
         <label>Password *<input class="input" type="password" name="pw" required minlength="4"></label>
@@ -1103,6 +1106,13 @@ function openUserModal() {
     </form>`);
 }
 
+// Picking a linked patient pre-fills the login name if it's still empty
+function autofillPatientName(sel) {
+  const nameInput = document.querySelector('#modal-body [name="name"]');
+  const p = patientById(sel.value);
+  if (p && nameInput && !nameInput.value.trim()) nameInput.value = p.name;
+}
+
 async function saveUser(e) {
   e.preventDefault();
   if (!requirePractitioner()) return;
@@ -1110,7 +1120,12 @@ async function saveUser(e) {
   if (f.get('pw') !== f.get('pw2')) { toast('Passwords do not match'); return; }
   const role = f.get('role');
   const patientId = role === 'patient' ? f.get('patientId') : undefined;
-  if (role === 'patient' && !patientId) { toast('Choose the patient record this login belongs to'); return; }
+  if (role === 'patient' && !patientId) {
+    toast(db.patients.length
+      ? 'Choose the patient record this login belongs to'
+      : 'Add the patient first (Patients → + New Patient), then create their login');
+    return;
+  }
   const salt = uid();
   db.users.push({
     id: uid(), name: f.get('name').trim(), role, patientId,
