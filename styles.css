@@ -268,9 +268,12 @@ label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font
   .app { flex-direction: column; }
   .sidebar { position: static; width: 100%; flex: none; height: auto; }
   .brand { padding: 12px 14px 4px; }
-  .nav { flex-direction: row; overflow-x: auto; padding: 6px 10px 10px; gap: 4px; }
+  .nav { flex-direction: row; overflow-x: auto; padding: 6px 10px 6px; gap: 4px; }
   .nav-item { flex: 0 0 auto; padding: 8px 10px; font-size: 13px; white-space: nowrap; }
-  .sidebar-foot { display: none; }
+  /* keep the signed-in chip + Sign out reachable on phones; drop only the privacy blurb */
+  .sidebar-foot { padding: 0 12px 10px; }
+  .sidebar-foot .privacy-note { display: none; }
+  .user-chip { margin-bottom: 0; }
   .main { padding: 16px 14px; }
   .view-head { margin-bottom: 14px; }
   .report-sheet { padding: 18px 16px; }

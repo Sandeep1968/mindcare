@@ -6,7 +6,7 @@
 <title>MindCare — Practice Manager</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%230f766e%22/><text x=%2250%22 y=%2272%22 font-size=%2260%22 font-family=%22sans-serif%22 font-weight=%22bold%22 fill=%22white%22 text-anchor=%22middle%22>M</text></svg>">
 <!-- Bump ?v= on every deploy so browsers never mix cached old assets with a new page -->
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -67,7 +67,7 @@
       <div id="user-chip" class="user-chip hidden">
         <span id="user-name"></span>
         <span class="badge" id="user-role"></span>
-        <button class="btn btn-sm" onclick="lockApp()" title="Lock the app">Lock</button>
+        <button class="btn btn-sm" onclick="lockApp()" title="Sign out and lock the app">Sign out</button>
       </div>
       <div class="privacy-note">🔒 All data stays on this device.</div>
     </div>
@@ -351,6 +351,6 @@
 <!-- Filled and shown only while printing an invoice/superbill -->
 <div id="print-invoice"></div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
