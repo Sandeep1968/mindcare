@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindCare Dashboard — Compassion. Clarity. Care.</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23003E7E%22/><text x=%2250%22 y=%2270%22 font-size=%2254%22 font-family=%22sans-serif%22 font-weight=%22700%22 fill=%22%23FFB81C%22 text-anchor=%22middle%22>M</text></svg>">
+<!-- Bump ?v= on every deploy so browsers never mix cached old assets with a new page -->
+<link rel="stylesheet" href="styles.css?v=14">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<!-- ============ LOGIN / SETUP GATE ============ -->
+<!-- This page has no public content behind it — if there's no session, this is the
+     only thing shown. "Back to MindCare website" leaves this route entirely. -->
+<div id="auth-screen" class="auth-screen hidden">
+  <div class="auth-card">
+    <a class="auth-back" href="index.html">← Back to MindCare website</a>
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" rx="10" fill="#003E7E"/><path d="M8 22c2-6 7-9 11-8 1-3 5-5 8-3 2 1 3 4 2 7 3 1 5 4 5 7-4 4-10 5-14 3-3 2-8 1-12-2 0-2 0-3 0-4z" fill="#FFE68C"/><path d="M10 24c4 5 11 7 18 4 2 2 1 4-1 5-7 2-14 0-19-5 1-2 1-3 2-4z" fill="#4279B0"/><circle cx="24" cy="11" r="2.2" fill="#FFB81C"/><path d="M22 8c2-3 5-2 5 1" stroke="#FFB81C" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Mind<span class="care">Care</span></div>
+        <div class="brand-sub">Compassion. Clarity. Care.</div>
+      </div>
+    </div>
+    <div id="auth-body"></div>
+  </div>
+</div>
+
+<div class="app hidden" id="app-shell">
+
+  <!-- ============ LEFT SIDEBAR ============ -->
+  <div class="sidebar-scrim" id="sidebar-scrim" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar" data-open="false">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" rx="10" fill="#003E7E"/><path d="M8 22c2-6 7-9 11-8 1-3 5-5 8-3 2 1 3 4 2 7 3 1 5 4 5 7-4 4-10 5-14 3-3 2-8 1-12-2 0-2 0-3 0-4z" fill="#FFE68C"/><path d="M10 24c4 5 11 7 18 4 2 2 1 4-1 5-7 2-14 0-19-5 1-2 1-3 2-4z" fill="#4279B0"/><circle cx="24" cy="11" r="2.2" fill="#FFB81C"/><path d="M22 8c2-3 5-2 5 1" stroke="#FFB81C" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Mind<span class="care">Care</span></div>
+        <div class="brand-sub">Compassion. Clarity. Care.</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Primary">
+      <button type="button" class="nav-item active" data-view="dashboard">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg></span> Dashboard
+      </button>
+      <button type="button" class="nav-item" data-view="schedule">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M8 3v4M16 3v4"/></svg></span> Schedule
+      </button>
+      <button type="button" class="nav-item" data-view="requests">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h8M8 12h8M8 17h5"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg></span> Appointments
+      </button>
+      <button type="button" class="nav-item" data-view="patients">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.8 14.3c2.1.6 3.5 2.7 3.7 5.7"/></svg></span> Patients
+      </button>
+
+      <div class="nav-group" id="nav-clinical-care" data-open="false">
+        <button type="button" class="nav-item nav-group-head" aria-expanded="false" onclick="toggleNavGroup(this)">
+          <span class="nav-label"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2.3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg></span> Clinical Care</span>
+          <span class="nav-caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+        <div class="nav-subnav">
+          <button type="button" class="nav-subitem" data-feature="Clinical Notes">Clinical Notes</button>
+          <button type="button" class="nav-subitem" data-feature="Assessments">Assessments</button>
+          <button type="button" class="nav-subitem" data-feature="Treatment Plans">Treatment Plans</button>
+          <button type="button" class="nav-subitem" data-feature="Forms & Documents">Forms &amp; Documents</button>
+        </div>
+      </div>
+
+      <button type="button" class="nav-item" data-feature="Communication">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v10H8l-4 4z"/></svg></span> Communication
+      </button>
+      <button type="button" class="nav-item" data-view="video">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/></svg></span> Video Visits
+      </button>
+      <button type="button" class="nav-item" data-view="billing">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5v19"/><path d="M8 6.8c0-1.6 1.8-2.8 4-2.8s4 1.2 4 2.6c0 3.4-8 1.6-8 5 0 1.5 1.8 2.7 4 2.7s4-1.1 4-2.6"/></svg></span> Billing &amp; Payments
+      </button>
+      <button type="button" class="nav-item" data-view="reports" data-doctor-only>
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20v-7M4 20h16"/></svg></span> Reports
+      </button>
+      <button type="button" class="nav-item" data-view="data" data-doctor-only>
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.3M12 18.7V21M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M3 12h2.3M18.7 12H21M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg></span> Settings
+      </button>
+      <button type="button" class="nav-item hidden" data-view="portal">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg></span> My Visits &amp; Billing
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="sidebar-illustration">
+        <svg viewBox="0 0 140 100" fill="none" aria-hidden="true">
+          <rect x="30" y="45" width="50" height="35" rx="8" fill="var(--accent-2-soft)" stroke="var(--accent-2)" stroke-width="2"/>
+          <path d="M30 55h50M55 45v35" stroke="var(--accent-2)" stroke-width="2"/>
+          <path d="M96 80V55c0-8 6-14 14-14s14 6 14 14v25" fill="none" stroke="var(--accent-deep)" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="110" cy="35" r="12" fill="var(--accent-soft)" stroke="var(--accent-deep)" stroke-width="2"/>
+        </svg>
+        <p>Take care of your mind, so you can take care of everything else.</p>
+      </div>
+      <div class="privacy-note">🔒 All data stays on this device.</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="app-main">
+    <header class="topbar">
+      <button type="button" class="topbar-menu-btn" onclick="openSidebar()" aria-label="Open navigation">☰</button>
+      <h1 class="topbar-title" id="topbar-title">Dashboard</h1>
+      <div class="topbar-search">
+        <span class="search-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg></span>
+        <input type="text" id="global-search" placeholder="Search clients, appointments…" autocomplete="off"
+          oninput="runGlobalSearch(this.value)" onfocus="runGlobalSearch(this.value)" aria-label="Search clients and appointments">
+        <span class="search-kbd" aria-hidden="true">⌘K</span>
+        <div id="search-results" class="popover pop-left pop-wide hidden"></div>
+      </div>
+      <div class="topbar-actions">
+        <div class="topbar-action-wrap">
+          <button type="button" class="icon-btn" id="notif-btn" onclick="toggleNotifPanel()" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+            <span class="icon-btn-badge hidden" id="notif-badge">0</span>
+          </button>
+          <div id="notif-panel" class="popover hidden"></div>
+        </div>
+        <div class="topbar-action-wrap">
+          <button type="button" class="user-menu-btn" id="user-menu-btn" onclick="toggleUserMenu()" aria-haspopup="true" aria-expanded="false">
+            <span class="avatar-circle" id="user-avatar">–</span>
+            <span class="who">
+              <span class="who-name" id="user-name">Signed out</span><br>
+              <span class="who-role" id="user-role"></span>
+            </span>
+          </button>
+          <div id="user-menu-panel" class="popover hidden"></div>
+        </div>
+      </div>
+    </header>
+
+  <main class="main" id="main">
+
+    <!-- ===== Dashboard (role-aware: content is built entirely in renderDashboard()) ===== -->
+    <section class="view" id="view-dashboard">
+      <div class="dash-head-row">
+        <div>
+          <h1 id="dash-greeting">Dashboard</h1>
+          <p class="dash-greeting-sub" id="dash-sub">Here's what's happening in your practice today.</p>
+        </div>
+        <div class="date-pill">
+          <span class="date-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M8 3v4M16 3v4"/></svg></span>
+          <span>
+            <span class="date-main" id="dash-date-main">—</span><br>
+            <span class="date-sub" id="dash-date-sub"></span>
+          </span>
+        </div>
+      </div>
+
+      <div id="dash-content"></div>
+    </section>
+
+    <!-- ===== Patients ===== -->
+    <section class="view hidden" id="view-patients">
+      <header class="view-head">
+        <div>
+          <h1>Patients</h1>
+          <p class="muted">Demographics, symptoms &amp; diagnoses</p>
+        </div>
+        <button class="btn btn-primary" onclick="openPatientModal()">+ New Patient</button>
+      </header>
+      <div class="card">
+        <input class="input search" id="patient-search" placeholder="Search patients by name, phone, or email…" oninput="renderPatients()">
+        <div id="patient-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Patient detail ===== -->
+    <section class="view hidden" id="view-patient-detail">
+      <header class="view-head">
+        <div>
+          <button class="btn btn-ghost" onclick="showView('patients')">← All patients</button>
+          <h1 id="pd-name" style="margin-top:8px"></h1>
+          <p class="muted" id="pd-meta"></p>
+        </div>
+        <div class="btn-row">
+          <button class="btn" onclick="editCurrentPatient()">Edit</button>
+          <button class="btn" onclick="openApptModal(currentPatientId)">+ Appointment</button>
+          <button class="btn btn-primary" data-doctor-only onclick="openRecordModal()">+ Clinical Entry</button>
+        </div>
+      </header>
+
+      <div class="two-col">
+        <div class="card" data-doctor-only>
+          <h2>Clinical history <span class="muted small">(symptoms · diagnosis · notes)</span></h2>
+          <div id="pd-records"></div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>Upcoming visits</h2>
+            <div id="pd-appts"></div>
+          </div>
+          <div class="card">
+            <h2>Billing summary</h2>
+            <div id="pd-billing"></div>
+          </div>
+          <div class="card" data-doctor-only>
+            <h2>Report</h2>
+            <p class="muted small">Generate a full health report for this patient.</p>
+            <button class="btn btn-primary" onclick="generateReport(currentPatientId); showView('reports')">Open health report</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Appointment requests (Core Team review queue) ===== -->
+    <section class="view hidden" id="view-requests">
+      <header class="view-head">
+        <div>
+          <h1>Appointments</h1>
+          <p class="muted">Online booking requests awaiting review — confirming creates a real schedule slot</p>
+        </div>
+      </header>
+      <div class="stat-grid" id="requests-stats"></div>
+      <div class="card">
+        <div class="btn-row filter-row" id="request-filters">
+          <button type="button" class="chip active" data-rfilter="new" onclick="setRequestFilter('new', this)">New</button>
+          <button type="button" class="chip" data-rfilter="all" onclick="setRequestFilter('all', this)">All</button>
+          <button type="button" class="chip" data-rfilter="confirmed" onclick="setRequestFilter('confirmed', this)">Confirmed</button>
+          <button type="button" class="chip" data-rfilter="declined" onclick="setRequestFilter('declined', this)">Declined</button>
+        </div>
+        <div id="request-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Schedule ===== -->
+    <section class="view hidden" id="view-schedule">
+      <header class="view-head">
+        <div>
+          <h1>Schedule</h1>
+          <p class="muted">Video and in-person visits</p>
+        </div>
+        <button class="btn btn-primary" onclick="openApptModal()">+ New Appointment</button>
+      </header>
+      <div class="card">
+        <div class="sched-toolbar">
+          <div class="btn-row">
+            <button class="chip active" id="mode-list" onclick="setScheduleMode('list')">List</button>
+            <button class="chip" id="mode-week" onclick="setScheduleMode('week')">Week</button>
+          </div>
+          <div class="btn-row hidden" id="week-nav">
+            <button class="btn btn-sm" onclick="shiftWeek(-1)" title="Previous week">←</button>
+            <button class="btn btn-sm" onclick="shiftWeek(0)">This week</button>
+            <button class="btn btn-sm" onclick="shiftWeek(1)" title="Next week">→</button>
+            <span class="muted small" id="week-label"></span>
+          </div>
+        </div>
+        <div class="btn-row filter-row" id="sched-filters">
+          <button class="chip active" data-filter="upcoming" onclick="setApptFilter('upcoming', this)">Upcoming</button>
+          <button class="chip" data-filter="today" onclick="setApptFilter('today', this)">Today</button>
+          <button class="chip" data-filter="past" onclick="setApptFilter('past', this)">Past</button>
+          <button class="chip" data-filter="all" onclick="setApptFilter('all', this)">All</button>
+        </div>
+        <div id="appt-list"></div>
+        <div id="appt-week" class="week-grid hidden"></div>
+      </div>
+    </section>
+
+    <!-- ===== Video visits ===== -->
+    <section class="view hidden" id="view-video">
+      <header class="view-head">
+        <div>
+          <h1>Video Visits</h1>
+          <p class="muted">One click starts your Zoom meeting — link is copied for your patient</p>
+        </div>
+        <button class="btn btn-primary" onclick="startInstantSession()">🎥 Start session now</button>
+      </header>
+      <div class="card">
+        <h2>Video settings</h2>
+        <p class="muted small">Paste your Zoom <b>Personal Meeting Room</b> link once (Zoom app → Meetings → Personal Room → Invite → Copy Link).
+        Every video visit then activates that Zoom meeting the moment you press 🎥.
+        If the Zoom app is installed it opens directly; otherwise the meeting opens in the browser.</p>
+        <div class="form-row">
+          <label>Provider
+            <select class="input" id="video-provider">
+              <option value="zoom">Zoom (personal meeting room)</option>
+              <option value="jitsi">Jitsi Meet (free, no account)</option>
+            </select>
+          </label>
+          <label>Zoom personal meeting link
+            <input class="input" id="zoom-link" placeholder="https://zoom.us/j/1234567890?pwd=…">
+          </label>
+        </div>
+        <div class="btn-row" style="align-items:center">
+          <button class="btn btn-primary" onclick="saveVideoSettings()">Save video settings</button>
+          <span class="muted small" id="video-settings-status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Upcoming video appointments</h2>
+        <div id="video-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Billing ===== -->
+    <section class="view hidden" id="view-billing">
+      <header class="view-head">
+        <div>
+          <h1>Billing &amp; Payments</h1>
+          <p class="muted">Invoices, payments and balances</p>
+        </div>
+        <button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button>
+      </header>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-num" id="bill-total">$0</div><div class="stat-label">Billed (all time)</div></div>
+        <div class="stat-card"><div class="stat-num" id="bill-paid">$0</div><div class="stat-label">Collected</div></div>
+        <div class="stat-card"><div class="stat-num" id="bill-due">$0</div><div class="stat-label">Outstanding</div></div>
+      </div>
+      <div class="card">
+        <div id="invoice-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Reports ===== -->
+    <section class="view hidden" id="view-reports">
+      <header class="view-head">
+        <div>
+          <h1>Reports</h1>
+          <p class="muted">On-screen report with PDF download</p>
+        </div>
+      </header>
+      <div class="card no-print">
+        <div class="form-row">
+          <label>Patient
+            <select class="input" id="report-patient" onchange="generateReport(this.value)"></select>
+          </label>
+          <div class="btn-row" style="align-self:flex-end">
+            <button class="btn btn-primary" onclick="downloadReportPdf()">⬇ Download PDF</button>
+          </div>
+        </div>
+      </div>
+      <div class="card report-sheet" id="report-sheet">
+        <p class="muted">Select a patient to generate a report.</p>
+      </div>
+    </section>
+
+    <!-- ===== Patient portal ===== -->
+    <section class="view hidden" id="view-portal">
+      <header class="view-head">
+        <div>
+          <h1 id="portal-title">My visits</h1>
+          <p class="muted">Your appointments and billing with this practice</p>
+        </div>
+      </header>
+      <div id="portal-body"></div>
+    </section>
+
+    <!-- ===== Coming soon (shared placeholder for not-yet-built nav destinations) ===== -->
+    <section class="view hidden" id="view-comingsoon">
+      <div class="card coming-soon">
+        <div class="cs-ico" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+        </div>
+        <h2 id="cs-title">This area</h2>
+        <p id="cs-body">is planned but not built yet.</p>
+        <p class="muted small" id="cs-note" style="margin-top:14px"></p>
+      </div>
+    </section>
+
+    <!-- ===== Data & Backup ===== -->
+    <section class="view hidden" id="view-data">
+      <header class="view-head">
+        <div>
+          <h1>Settings</h1>
+          <p class="muted">Your data lives only in this browser — back it up regularly</p>
+        </div>
+      </header>
+      <div class="card">
+        <h2>Users &amp; access</h2>
+        <p class="muted small">Three roles: <b>Practitioner</b> (super user — everything), <b>Staff</b> (patient demographics,
+        scheduling, video visits, billing), and <b>Patient</b> (a portal login linked to one patient record — sees only
+        their own visits and billing, can join their video sessions). Clinical entries, health reports, backups and
+        user management stay practitioner-only.</p>
+        <div id="user-list"></div>
+        <button class="btn btn-primary" onclick="openUserModal()">+ Add user</button>
+      </div>
+      <div class="card">
+        <h2>Backup</h2>
+        <p class="muted small">Export all patients, appointments and invoices as a JSON file.</p>
+        <button class="btn btn-primary" onclick="exportData()">⬇ Export backup</button>
+      </div>
+      <div class="card">
+        <h2>Restore</h2>
+        <p class="muted small">Import a previously exported backup file. This replaces current data.</p>
+        <input type="file" id="import-file" accept=".json" onchange="importData(event)">
+      </div>
+      <div class="card danger-card">
+        <h2>Danger zone</h2>
+        <p class="muted small">Erase everything stored by this app in the browser.</p>
+        <button class="btn btn-danger" onclick="wipeData()">Erase all data</button>
+      </div>
+      <div class="card">
+        <h2>Privacy &amp; compliance notes</h2>
+        <ul class="notes-list">
+          <li>Data is stored in your browser's local storage on this device only — nothing is sent to a server.</li>
+          <li>For real clinical use with protected health information (PHI), use an encrypted device, a private OS account, and regular encrypted backups.</li>
+          <li>Video sessions use Jitsi Meet links. For HIPAA-covered practice, use a provider that signs a BAA (e.g. Zoom for Healthcare, doxy.me) and paste that link into the appointment instead.</li>
+          <li>This tool is a lightweight organizer, not a certified EHR. Verify billing codes and documentation against your local regulations.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+  </div><!-- /.app-main -->
+</div><!-- /.app -->
+
+<!-- ============ MODALS ============ -->
+<div class="modal-backdrop hidden" id="modal-backdrop" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h2 id="modal-title">Modal</h2>
+      <button type="button" class="btn btn-ghost" onclick="closeModal()" aria-label="Close dialog">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<!-- Filled and shown only while printing an invoice/superbill -->
+<div id="print-invoice"></div>
+
+<script src="app.js?v=14"></script>
+</body>
+</html>

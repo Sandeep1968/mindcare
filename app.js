@@ -5,12 +5,17 @@ const STORE_KEY = 'mindcare.v1';
 const LEGACY_STORE_KEY = 'theradesk.v1'; // pre-rebrand key; migrated on first load
 
 let db = load();
-db.settings = { provider: 'zoom', zoomLink: '', ...(db.settings || {}) };
+db.settings = { provider: 'zoom', zoomLink: '', clinicName: 'MindCare Practice', ...(db.settings || {}) };
 db.users = db.users || [];
+db.appointmentRequests = db.appointmentRequests || [];
 // migrate accounts created before the doctor -> practitioner rename
 db.users.forEach(u => { if (u.role === 'doctor') u.role = 'practitioner'; });
 let currentPatientId = null;
 let apptFilter = 'upcoming';
+let requestFilter = 'new';
+// dashboard.html?login=patient (linked from the public site's Patient Login buttons)
+// preselects the patient sign-in list; anything else defaults to staff/practitioner.
+let authIntent = new URLSearchParams(location.search).get('login') === 'patient' ? 'patient' : 'staff';
 
 function load() {
   try {
@@ -24,13 +29,14 @@ function load() {
       return data;
     }
   } catch (e) { console.error('Failed to load data', e); }
-  return { patients: [], appointments: [], invoices: [] };
+  return { patients: [], appointments: [], invoices: [], appointmentRequests: [], users: [], settings: {} };
 }
 
 function save() {
   // db can be wholesale-replaced (wipe/import/sample load) — always re-ensure defaults
-  db.settings = { provider: 'zoom', zoomLink: '', ...(db.settings || {}) };
+  db.settings = { provider: 'zoom', zoomLink: '', clinicName: 'MindCare Practice', ...(db.settings || {}) };
   db.users = db.users || [];
+  db.appointmentRequests = db.appointmentRequests || [];
   localStorage.setItem(STORE_KEY, JSON.stringify(db));
   renderAll();
 }
@@ -72,7 +78,7 @@ const SESSION_KEY = 'mindcare.session';
 const PRACTITIONER_ONLY_VIEWS = ['reports', 'data'];
 const ROLE_LABEL = { practitioner: 'Practitioner', staff: 'Staff', patient: 'Patient' };
 const ROLE_RANK = { practitioner: 0, staff: 1, patient: 2 };
-const ROLE_BADGE = { practitioner: 'badge-video', staff: 'badge-partial', patient: 'badge-inperson' };
+const ROLE_BADGE = { practitioner: 'badge-role-practitioner', staff: 'badge-role-staff', patient: 'badge-role-patient' };
 
 function currentUser() {
   // sessionStorage = this tab's login; localStorage = "keep me signed in on this device"
@@ -118,14 +124,33 @@ async function verifyPassword(pw, user) {
 }
 
 function renderAuth() {
+  const pub = document.getElementById('public-site');
+  const loggedIn = !!currentUser();
+
+  if (pub) {
+    // index.html (route: /) — the public website has no auth gate of its own.
+    // A signed-in visitor here is sent straight to the dashboard route instead
+    // of maintaining two different "logged in" UIs on one page.
+    if (loggedIn) { window.location.href = 'dashboard.html'; return; }
+    renderPublicSite();
+    return;
+  }
+
+  // dashboard.html (route: /dashboard) — this route IS the auth gate; there is
+  // nothing else on this page to fall back to.
   const scr = document.getElementById('auth-screen');
   const body = document.getElementById('auth-body');
-  if (currentUser()) {
+  const app = document.getElementById('app-shell');
+
+  if (loggedIn) {
     scr.classList.add('hidden');
-    body.innerHTML = ''; // never leave the typed password sitting in the DOM
+    body.innerHTML = ''; // never leave a typed password sitting in the DOM
+    app.classList.remove('hidden');
     applyRoleUI();
     return;
   }
+
+  app.classList.add('hidden');
   scr.classList.remove('hidden');
   if (!db.users.length) {
     body.innerHTML = `
@@ -139,18 +164,36 @@ function renderAuth() {
         <button class="btn btn-primary">Create account &amp; open MindCare</button>
       </form>`;
   } else {
-    const opts = db.users.slice()
-      .sort((a, b) => (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name))
-      .map(u => `<option value="${u.id}">${esc(u.name)} (${ROLE_LABEL[u.role] || u.role})</option>`).join('');
-    body.innerHTML = `
-      <h2>Sign in</h2>
-      <form onsubmit="doLogin(event)">
-        <div class="form-row"><label>User<select class="input" name="userId">${opts}</select></label></div>
-        <div class="form-row"><label>Password<input class="input" type="password" name="pw" required autofocus></label></div>
-        <label class="remember"><input type="checkbox" name="remember"> Keep me signed in on this device</label>
-        <div class="auth-error" id="auth-error"></div>
-        <button class="btn btn-primary">Unlock</button>
-      </form>`;
+    const pool = db.users.filter(u => {
+      if (authIntent === 'patient') return u.role === 'patient';
+      return u.role === 'practitioner' || u.role === 'staff';
+    });
+    if (!pool.length) {
+      body.innerHTML = `
+        <h2>${authIntent === 'patient' ? 'Patient login' : 'Staff sign in'}</h2>
+        <p class="muted small">${authIntent === 'patient'
+          ? 'No patient portal logins exist yet. Ask the clinic to create one under Settings → Users.'
+          : 'No staff or practitioner accounts exist yet.'}</p>
+        <button type="button" class="btn" onclick="authIntent='staff';renderAuth()">Staff / Practitioner instead</button>`;
+    } else {
+      const opts = pool.slice()
+        .sort((a, b) => (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name))
+        .map(u => `<option value="${u.id}">${esc(u.name)} (${ROLE_LABEL[u.role] || u.role})</option>`).join('');
+      body.innerHTML = `
+        <h2>${authIntent === 'patient' ? 'Patient login' : 'Staff / Practitioner sign in'}</h2>
+        <form onsubmit="doLogin(event)">
+          <div class="form-row"><label>User<select class="input" name="userId">${opts}</select></label></div>
+          <div class="form-row"><label>Password<input class="input" type="password" name="pw" required autofocus></label></div>
+          <label class="remember"><input type="checkbox" name="remember"> Keep me signed in on this device</label>
+          <div class="auth-error" id="auth-error"></div>
+          <button class="btn btn-primary">Unlock</button>
+        </form>
+        <p class="muted small" style="margin-top:12px">
+          ${authIntent === 'patient'
+            ? `<a href="#" onclick="authIntent='staff';renderAuth();return false">Staff / Practitioner sign in</a>`
+            : `<a href="#" onclick="authIntent='patient';renderAuth();return false">Patient login</a>`}
+        </p>`;
+    }
   }
   setTimeout(() => body.querySelector('input')?.focus(), 50);
 }
@@ -172,6 +215,7 @@ async function doSetup(e) {
   setSession(user.id, false);
   save();
   renderAuth();
+  showView('dashboard');
   toast(`Welcome, ${user.name}`);
 }
 
@@ -191,15 +235,23 @@ async function doLogin(e) {
   toast(`Welcome back, ${user.name}`);
 }
 
+function closeAuth() {
+  // dashboard.html has nothing to show without a session — "closing" the
+  // login screen means leaving this route and going back to the website.
+  window.location.href = 'index.html';
+}
+
 function lockApp() {
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(SESSION_KEY); // Lock always ends a "keep me signed in" session too
-  // Clear any generated PHI from print surfaces while locked
-  document.getElementById('report-sheet').innerHTML = '<p class="muted">Select a patient to generate a report.</p>';
-  document.getElementById('print-invoice').innerHTML = '';
   closeModal();
-  showView('dashboard');
-  renderAuth();
+  // Full navigation away — no need to hand-clear report/print DOM state,
+  // the whole page (and any PHI rendered into it) unloads with it.
+  window.location.href = 'index.html';
+}
+
+function initials(name) {
+  return (name || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
 }
 
 function applyRoleUI() {
@@ -214,19 +266,30 @@ function applyRoleUI() {
     else if (!el.hasAttribute('data-doctor-only')) el.classList.toggle('hidden', patient);
     else if (patient) el.classList.add('hidden');
   });
-  const chip = document.getElementById('user-chip');
+  // Clinical Care group and Communication are staff/practitioner-facing placeholders — not for patients
+  document.getElementById('nav-clinical-care')?.classList.toggle('hidden', patient);
+  document.querySelectorAll('.nav-item[data-feature]').forEach(el => el.classList.toggle('hidden', patient));
+
+  const nameEl = document.getElementById('user-name');
+  const roleEl = document.getElementById('user-role');
+  const avatarEl = document.getElementById('user-avatar');
   if (u) {
-    chip.classList.remove('hidden');
-    document.getElementById('user-name').textContent = u.name;
-    const roleEl = document.getElementById('user-role');
+    nameEl.textContent = u.name;
     roleEl.textContent = ROLE_LABEL[u.role] || u.role;
-    roleEl.className = 'badge ' + (ROLE_BADGE[u.role] || 'badge-partial');
+    avatarEl.textContent = initials(u.name);
   } else {
-    chip.classList.add('hidden');
+    nameEl.textContent = 'Signed out';
+    roleEl.textContent = '';
+    avatarEl.textContent = '–';
   }
 }
 
 /* ============ Navigation ============ */
+const VIEW_TITLES = {
+  dashboard: 'Dashboard', patients: 'Patients', 'patient-detail': 'Patient',
+  schedule: 'Schedule', requests: 'Appointments', video: 'Video Visits', billing: 'Billing & Payments',
+  reports: 'Reports', data: 'Settings', portal: 'My Visits & Billing', comingsoon: 'Coming Soon'
+};
 function showView(name) {
   if (isPatient() && name !== 'portal') { toast('Patient logins can only view their own visits and billing'); return; }
   if (isStaff() && PRACTITIONER_ONLY_VIEWS.includes(name)) { toast('Practitioner access required'); return; }
@@ -235,10 +298,51 @@ function showView(name) {
   const navKey = name === 'patient-detail' ? 'patients' : name; // detail view keeps Patients highlighted
   document.querySelectorAll('.nav-item').forEach(b =>
     b.classList.toggle('active', b.dataset.view === navKey));
+  const titleEl = document.getElementById('topbar-title');
+  if (titleEl) titleEl.textContent = VIEW_TITLES[name] || 'MindCare';
+  closeAllPopovers();
+  closeSidebar();
   window.scrollTo(0, 0);
 }
-document.querySelectorAll('.nav-item').forEach(btn =>
-  btn.addEventListener('click', () => showView(btn.dataset.view)));
+
+// Coming-soon copy per not-yet-built feature — honest about what's built and where
+// the real functionality currently lives, per docs/11-mindcare-experience-architecture.md.
+const COMING_SOON_NOTE = {
+  'Clinical Notes': 'Today, clinical notes are recorded directly on each patient’s record — open a patient, then “+ Clinical Entry.”',
+  'Assessments': 'Structured assessments (e.g. PHQ-9 scoring and trends) are planned but not part of this version yet.',
+  'Treatment Plans': 'Structured treatment plans and goals are planned but not part of this version yet.',
+  'Forms & Documents': 'Intake forms, consent forms and document storage are planned but not part of this version yet.',
+  'Communication': 'For now, please reach patients using the phone/email on file in their record.'
+};
+function navToComingSoon(feature) {
+  if (isPatient()) { toast('Not available on patient logins'); return; }
+  document.getElementById('cs-title').textContent = feature;
+  document.getElementById('cs-body').textContent = `${feature} is part of MindCare’s planned Clinical Care expansion — not built yet in this version.`;
+  document.getElementById('cs-note').textContent = COMING_SOON_NOTE[feature] || '';
+  showView('comingsoon');
+}
+
+function toggleNavGroup(btn) {
+  const group = btn.closest('.nav-group');
+  const open = group.getAttribute('data-open') === 'true';
+  group.setAttribute('data-open', open ? 'false' : 'true');
+  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+}
+
+function openSidebar() {
+  document.getElementById('sidebar').setAttribute('data-open', 'true');
+  document.getElementById('sidebar-scrim').classList.add('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').setAttribute('data-open', 'false');
+  document.getElementById('sidebar-scrim').classList.remove('show');
+}
+
+document.querySelectorAll('.nav-item, .nav-subitem').forEach(btn =>
+  btn.addEventListener('click', () => {
+    if (btn.dataset.feature) navToComingSoon(btn.dataset.feature);
+    else if (btn.dataset.view) showView(btn.dataset.view);
+  }));
 
 /* ============ Toast / modal helpers ============ */
 let toastTimer;
@@ -258,7 +362,109 @@ function openModal(title, bodyHtml) {
 function closeModal() {
   document.getElementById('modal-backdrop').classList.add('hidden');
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModal();
+    if (document.getElementById('auth-screen')?.dataset.open === 'true' && !currentUser()) closeAuth();
+  }
+});
+
+/* ============ Topbar: search, notifications, user menu ============ */
+function closeAllPopovers() {
+  ['search-results', 'notif-panel', 'user-menu-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+  document.getElementById('notif-btn')?.setAttribute('aria-expanded', 'false');
+  document.getElementById('user-menu-btn')?.setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.topbar-search') && !e.target.closest('.topbar-action-wrap')) closeAllPopovers();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAllPopovers();
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    document.getElementById('global-search')?.focus();
+  }
+});
+
+function runGlobalSearch(q) {
+  const box = document.getElementById('search-results');
+  if (!box) return;
+  q = (q || '').trim().toLowerCase();
+  if (!q || isPatient()) { box.classList.add('hidden'); return; }
+
+  const patients = db.patients.filter(p => [p.name, p.phone, p.email].join(' ').toLowerCase().includes(q)).slice(0, 5);
+  const t = todayIso();
+  const appts = db.appointments.filter(a => a.date >= t && patientName(a.patientId).toLowerCase().includes(q)).slice(0, 4);
+
+  let html = '';
+  if (patients.length) {
+    html += '<div class="popover-head">Patients</div>' + patients.map(p =>
+      `<button type="button" class="popover-item" onclick="selectSearchResult('patient','${p.id}')">${esc(p.name)}${p.phone ? ' · ' + esc(p.phone) : ''}</button>`).join('');
+  }
+  if (appts.length) {
+    html += '<div class="popover-head">Upcoming appointments</div>' + appts.map(a =>
+      `<button type="button" class="popover-item" onclick="selectSearchResult('appt','${a.id}')">${esc(patientName(a.patientId))} — ${fmtDate(a.date)} ${fmtTime(a.time)}</button>`).join('');
+  }
+  if (!html) html = '<div class="popover-empty">No matches</div>';
+  box.innerHTML = '<div class="popover-body">' + html + '</div>';
+  box.classList.remove('hidden');
+}
+function selectSearchResult(kind, id) {
+  document.getElementById('global-search').value = '';
+  document.getElementById('search-results').classList.add('hidden');
+  const patientId = kind === 'patient' ? id : db.appointments.find(x => x.id === id)?.patientId;
+  if (!patientId) return;
+  showView('patients');
+  openPatientDetail(patientId);
+}
+
+// The same real, honest data used on the Dashboard's "Needs attention" — no separate
+// notification store, just a different lens on the same computed lists.
+function needsAttentionItems() {
+  if (isPatient()) return [];
+  const reqs = (db.appointmentRequests || []).filter(r => r.status === 'new')
+    .map(r => ({ label: `Booking request — ${r.name}`, action: () => showView('requests') }));
+  if (isPractitioner()) {
+    return reqs
+      .concat(pendingNoteAppointments().map(x => ({ label: `Note pending — ${x.patient.name}`, action: () => { openPatientDetail(x.patient.id); openRecordModal(); } })))
+      .concat(followUpClients().map(p => ({ label: `Follow-up due — ${p.name}`, action: () => openApptModal(p.id) })));
+  }
+  return reqs.concat(db.invoices.filter(i => invoiceStatus(i) !== 'paid')
+    .map(inv => ({ label: `Payment due — ${patientName(inv.patientId)}`, action: () => openPaymentModal(inv.id) })));
+}
+function renderNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const n = needsAttentionItems().length;
+  badge.textContent = n;
+  badge.classList.toggle('hidden', n === 0);
+}
+let notifActions = [];
+function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const willOpen = panel.classList.contains('hidden');
+  closeAllPopovers();
+  if (!willOpen) return;
+  notifActions = needsAttentionItems();
+  panel.innerHTML = '<div class="popover-head">Needs attention</div><div class="popover-body">' +
+    (notifActions.length ? notifActions.map((it, i) => `<button type="button" class="popover-item" onclick="notifActions[${i}].action();closeAllPopovers()">${esc(it.label)}</button>`).join('')
+      : '<div class="popover-empty">You\'re all caught up ✓</div>') + '</div>';
+  panel.classList.remove('hidden');
+  document.getElementById('notif-btn').setAttribute('aria-expanded', 'true');
+}
+
+function toggleUserMenu() {
+  const panel = document.getElementById('user-menu-panel');
+  const willOpen = panel.classList.contains('hidden');
+  closeAllPopovers();
+  if (!willOpen) return;
+  const u = currentUser();
+  panel.innerHTML = `<div class="popover-head">${u ? esc(u.name) : ''}</div><div class="popover-body">
+    <button type="button" class="popover-item" onclick="closeAllPopovers();lockApp()">Sign out</button>
+  </div>`;
+  panel.classList.remove('hidden');
+  document.getElementById('user-menu-btn').setAttribute('aria-expanded', 'true');
+}
 
 function patientOptions(selectedId) {
   // Without a preselected patient, force an explicit choice instead of silently
@@ -992,8 +1198,10 @@ function downloadReportPdf() {
   window.print();
 }
 
-/* ============ Patient portal ============ */
-// What a patient login sees: their own visits (join video, copy link) and billing. Read-only.
+/* ============ Patient portal (Patient dashboard) ============ */
+// What a patient login sees: their own visits (join video, copy link) and billing. Read-only,
+// plus a small set of honest quick actions — nothing here claims a capability (self-booking,
+// messaging) that doesn't actually exist yet.
 function renderPortal() {
   const el = document.getElementById('portal-body');
   const u = currentUser();
@@ -1005,10 +1213,12 @@ function renderPortal() {
     el.innerHTML = '<div class="card"><p class="muted">Your login is not linked to a patient record yet — please contact the practice.</p></div>';
     return;
   }
-  title.textContent = `Hello, ${p.name.split(' ')[0]}`;
+  title.textContent = `${greeting()}, ${p.name.split(' ')[0]}`;
   const t = todayIso();
   const mine = db.appointments.filter(a => a.patientId === p.id);
   const upcoming = mine.filter(a => a.date >= t).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const next = upcoming[0] || null;
+  const laterUpcoming = upcoming.slice(1);
   const past = mine.filter(a => a.date < t).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time)).slice(0, 5);
   const invs = db.invoices.filter(i => i.patientId === p.id).sort((x, y) => y.date.localeCompare(x.date));
   const billed = invs.reduce((s, i) => s + Number(i.amount), 0);
@@ -1023,19 +1233,41 @@ function renderPortal() {
         <div class="row-sub">${esc(a.duration || 50)} min${a.reason ? ' · ' + esc(a.reason) : ''}${!isVideo && a.location ? ' · 📍 ' + esc(a.location) : ''}</div>
       </div>
       ${joinable && isVideo && a.link ? `<div class="btn-row">
-        <button class="btn btn-sm btn-primary" onclick="joinVideo('${a.id}')">🎥 Join</button>
-        <button class="btn btn-sm" onclick="copyLink('${a.id}')">Copy link</button></div>` : ''}
+        <button type="button" class="btn btn-sm btn-primary" onclick="joinVideo('${a.id}')">🎥 Join</button>
+        <button type="button" class="btn btn-sm" onclick="copyLink('${a.id}')">Copy link</button></div>` : ''}
     </div>`;
   };
 
-  el.innerHTML = `
-    <div class="card"><h2>Upcoming visits</h2>
-      ${upcoming.length ? upcoming.map(a => visitRow(a, true)).join('') : '<div class="empty">No upcoming visits scheduled — contact the practice to book one.</div>'}
-    </div>
-    <div class="card"><h2>Recent visits</h2>
+  const heroHtml = next ? (() => {
+    const isVideo = next.type !== 'in-person';
+    return `<div class="hero-appt">
+      <div class="hero-label">Your next appointment</div>
+      <div class="hero-when">${fmtDate(next.date)} at ${fmtTime(next.time)}</div>
+      <div class="hero-sub">${esc(next.duration || 50)} min · ${isVideo ? '🎥 Virtual visit' : '🏢 In person'}${next.reason ? ' · ' + esc(next.reason) : ''}
+        ${!isVideo && next.location ? '<br>📍 ' + esc(next.location) : ''}</div>
+      <div class="hero-actions btn-row">
+        ${isVideo && next.link ? `<button type="button" class="btn btn-primary" onclick="joinVideo('${next.id}')">🎥 Join Session</button>
+          <button type="button" class="btn" onclick="copyLink('${next.id}')">Copy link</button>` : ''}
+      </div>
+    </div>`;
+  })() : `<div class="hero-appt"><div class="hero-label">Your next appointment</div>
+      <p class="hero-empty">No upcoming appointments scheduled — contact the clinic to book one.</p></div>`;
+
+  const quickActions = `<div class="card"><h2>Quick actions</h2>
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" onclick="toast('Online booking is coming soon — please contact the clinic to book.')">Book Appointment</button>
+      <button type="button" class="btn" onclick="toast('Secure messaging is coming soon — please contact the clinic directly for now.')">Message Clinic</button>
+      <button type="button" class="btn" onclick="document.getElementById('portal-billing').scrollIntoView({behavior:'smooth'})">View Billing</button>
+    </div></div>`;
+
+  el.innerHTML = heroHtml + quickActions +
+    (laterUpcoming.length ? `<div class="card"><h2>Also upcoming</h2>
+      ${laterUpcoming.map(a => visitRow(a, true)).join('')}
+    </div>` : '') +
+    `<div class="card"><h2>Recent visits</h2>
       ${past.length ? past.map(a => visitRow(a, false)).join('') : '<div class="empty">No past visits.</div>'}
     </div>
-    <div class="card"><h2>My billing</h2>
+    <div class="card" id="portal-billing"><h2>My billing</h2>
       ${invs.map(inv => {
         const st = invoiceStatus(inv);
         const badge = { paid: 'badge-paid', partial: 'badge-partial', unpaid: 'badge-unpaid' }[st];
@@ -1198,7 +1430,8 @@ function importData(e) {
       if (!Array.isArray(data.patients)) throw new Error('Not a MindCare backup');
       if (confirm('Replace ALL current data with this backup?')) {
         // keep current logins/settings when the backup predates them
-        db = { patients: [], appointments: [], invoices: [], users: db.users, settings: db.settings, ...data };
+        db = { patients: [], appointments: [], invoices: [], appointmentRequests: [], users: db.users, settings: db.settings, ...data };
+        db.appointmentRequests = db.appointmentRequests || [];
         save();
         toast('Backup restored');
       }
@@ -1215,7 +1448,7 @@ function wipeData() {
   if (!requirePractitioner()) return;
   if (!confirm('Erase ALL patient data? Export a backup first if you want to keep anything. (Logins and video settings are kept.)')) return;
   if (!confirm('Really erase everything? This cannot be undone.')) return;
-  db = { patients: [], appointments: [], invoices: [], users: db.users, settings: db.settings };
+  db = { patients: [], appointments: [], invoices: [], appointmentRequests: [], users: db.users, settings: db.settings };
   currentPatientId = null;
   save();
   showView('dashboard');
@@ -1239,6 +1472,7 @@ function loadSampleData() {
   db = {
     users: db.users,
     settings: db.settings,
+    appointmentRequests: db.appointmentRequests || [],
     patients: [p1, p2, p3],
     appointments: [
       { id: uid(), patientId: p1.id, date: todayIso(), time: '10:00', duration: '50', type: 'video', link: videoRoomLink(), reason: 'Weekly CBT session', location: '' },
@@ -1256,52 +1490,605 @@ function loadSampleData() {
   toast('Sample data loaded');
 }
 
-/* ============ Dashboard ============ */
-function renderDashboard() {
+/* ============ Dashboard (role-aware) ============ */
+// Three questions only: what's happening today, what needs attention, what can I do quickly.
+// Therapist/Staff dashboards are built here; the Patient dashboard lives in renderPortal().
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+function qa(label, onclick, primary) {
+  return `<button type="button" class="btn ${primary ? 'btn-primary' : ''}" onclick="${onclick}">${esc(label)}</button>`;
+}
+
+// Heuristic derived entirely from existing data — no fabricated fields: a same-day-or-earlier
+// appointment with no clinical entry dated that same day for that patient.
+function pendingNoteAppointments() {
   const t = todayIso();
-  document.getElementById('dash-date').textContent =
-    new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  return db.appointments
+    .filter(a => a.date <= t && patientById(a.patientId))
+    .map(a => {
+      const p = patientById(a.patientId);
+      const hasNote = (p.records || []).some(r => r.date === a.date);
+      return hasNote ? null : { appt: a, patient: p };
+    })
+    .filter(Boolean)
+    .sort((x, y) => y.appt.date.localeCompare(x.appt.date));
+}
 
-  const weekEnd = new Date(); weekEnd.setDate(weekEnd.getDate() + 7);
-  const todayAppts = db.appointments.filter(a => a.date === t);
-  const weekAppts = db.appointments.filter(a => a.date >= t && a.date <= isoDate(weekEnd));
-  const due = db.invoices.reduce((s, i) => s + Math.max(0, Number(i.amount) - paidAmount(i)), 0);
+// Heuristic derived entirely from existing data: a patient whose most recent visit was
+// FOLLOW_UP_DAYS+ ago with nothing booked since. Not a real "follow-up" workflow yet —
+// just a useful, honest signal from appointment history.
+const FOLLOW_UP_DAYS = 14;
+function followUpClients() {
+  const t = todayIso();
+  return db.patients.filter(p => {
+    const appts = db.appointments.filter(a => a.patientId === p.id);
+    if (!appts.length || appts.some(a => a.date >= t)) return false;
+    const last = appts.slice().sort((x, y) => x.date.localeCompare(y.date)).pop();
+    return (new Date(t) - new Date(last.date + 'T00:00:00')) / 86400000 >= FOLLOW_UP_DAYS;
+  });
+}
 
-  document.getElementById('stat-patients').textContent = db.patients.length;
-  document.getElementById('stat-today').textContent = todayAppts.length;
-  document.getElementById('stat-week').textContent = weekAppts.length;
-  document.getElementById('stat-due').textContent = money(due);
+function toggleCheckIn(apptId) {
+  if (!requireStaffAccess()) return;
+  const a = db.appointments.find(x => x.id === apptId);
+  if (!a) return;
+  a.checkedIn = !a.checkedIn;
+  save();
+  toast(a.checkedIn ? 'Checked in' : 'Check-in removed');
+}
 
-  document.getElementById('dash-today-list').innerHTML = todayAppts.length
-    ? todayAppts.sort((x, y) => x.time.localeCompare(y.time)).map(apptRow).join('')
-    : '<div class="empty">No appointments today.</div>';
+function dashSessionRow(a) {
+  const isVideo = a.type !== 'in-person';
+  return `<div class="row">
+    <div class="row-main">
+      <div class="row-title">${fmtTime(a.time)} — ${esc(patientName(a.patientId))}
+        <span class="badge ${isVideo ? 'badge-video' : 'badge-inperson'}">${isVideo ? '🎥 Virtual' : '🏢 In-person'}</span></div>
+      <div class="row-sub">${esc(a.reason || 'Session')}${!isVideo && a.location ? ' · 📍 ' + esc(a.location) : ''}</div>
+    </div>
+    <div class="btn-row">
+      ${isVideo && a.link ? `<button type="button" class="btn btn-sm btn-primary" onclick="joinVideo('${a.id}')">🎥 Join</button>` : ''}
+      <button type="button" class="btn btn-sm" onclick="openPatientDetail('${a.patientId}')">View Client</button>
+    </div>
+  </div>`;
+}
 
-  const unpaid = db.invoices.filter(i => invoiceStatus(i) !== 'paid')
-    .sort((x, y) => x.date.localeCompare(y.date));
-  document.getElementById('dash-unpaid-list').innerHTML = unpaid.length ? unpaid.map(inv => `
-    <div class="row">
-      <div class="row-main">
-        <div class="row-title">${esc(patientName(inv.patientId))}</div>
-        <div class="row-sub">${fmtDate(inv.date)} · ${esc(inv.description)}</div>
+function dashStaffApptRow(a) {
+  const isVideo = a.type !== 'in-person';
+  const checked = !!a.checkedIn;
+  return `<div class="row">
+    <div class="row-main">
+      <div class="row-title">${fmtTime(a.time)} — ${esc(patientName(a.patientId))}
+        <span class="badge ${isVideo ? 'badge-video' : 'badge-inperson'}">${isVideo ? '🎥 Video' : '🏢 In-person'}</span>
+        ${checked ? '<span class="badge badge-paid">Checked in</span>' : ''}</div>
+      <div class="row-sub">${esc(a.duration || 50)} min${a.reason ? ' · ' + esc(a.reason) : ''}</div>
+    </div>
+    <div class="btn-row">
+      <button type="button" class="btn btn-sm ${checked ? '' : 'btn-primary'}" onclick="toggleCheckIn('${a.id}')">${checked ? 'Undo check-in' : 'Check in'}</button>
+      <button type="button" class="btn btn-sm" onclick="openApptModal(null,'${a.id}')">Edit</button>
+    </div>
+  </div>`;
+}
+
+/* Small original icon set — plain inline SVG, no icon-font/library dependency. */
+const ICONS = {
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M8 3v4M16 3v4"/></svg>',
+  fileText: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.8 14.3c2.1.6 3.5 2.7 3.7 5.7"/></svg>',
+  dollar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5v19"/><path d="M8 6.8c0-1.6 1.8-2.8 4-2.8s4 1.2 4 2.6c0 3.4-8 1.6-8 5 0 1.5 1.8 2.7 4 2.7s4-1.1 4-2.6"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  lightning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>',
+  plusUser: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M18 8v6M15 11h6"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20v-7M4 20h16"/></svg>',
+  clipboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2.3" width="6" height="3" rx="1"/><path d="M9 11h6M9 15h4"/></svg>',
+  calendarPlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M12 13v6M9 16h6"/></svg>'
+};
+
+function statTile(icon, tint, num, label, sub) {
+  return `<div class="stat-card stat-tile">
+    <div class="stat-tile-ico ${tint}">${icon}</div>
+    <div><div class="stat-num">${esc(num)}</div><div class="stat-label">${esc(label)}</div>${sub ? `<div class="stat-sub">${esc(sub)}</div>` : ''}</div>
+  </div>`;
+}
+function attnRow(icon, title, sub, onclick) {
+  return `<button type="button" class="attn-row-v2" onclick="${onclick}">
+    <span class="attn-ico">${icon}</span>
+    <span style="flex:1;min-width:0">
+      <span class="attn-title" style="display:block">${esc(title)}</span>
+      <span class="attn-sub">${esc(sub)}</span>
+    </span>
+    <span class="attn-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
+  </button>`;
+}
+function qaGrid(actions) {
+  return `<div class="qa-grid">${actions.map(a =>
+    `<button type="button" class="qa-btn ${a.primary ? 'qa-primary' : ''}" onclick="${a.onclick}">
+      <span class="qa-ico">${a.icon}</span>${esc(a.label)}
+    </button>`).join('')}</div>`;
+}
+function dashScheduleRow(a) {
+  const isVideo = a.type !== 'in-person';
+  const name = patientName(a.patientId);
+  return `<tr>
+    <td data-label="Time"><b>${fmtTime(a.time)}</b></td>
+    <td data-label="Client"><div class="sched-client-cell"><span class="mini-avatar">${esc(initials(name))}</span>${esc(name)}</div></td>
+    <td data-label="Type">${esc(a.reason || 'Session')}</td>
+    <td data-label="Location">${isVideo ? '🎥 Virtual' : '<span class="loc-ico">📍</span>In-person'}</td>
+    <td data-label="Status">${a.checkedIn ? '<span class="badge badge-paid">Checked in</span>' : '<span class="text-muted">—</span>'}</td>
+    <td data-label="">${isVideo && a.link
+      ? `<button type="button" class="btn btn-sm btn-primary" onclick="joinVideo('${a.id}')">🎥 Join</button>`
+      : `<button type="button" class="btn btn-sm" onclick="openPatientDetail('${a.patientId}')">View Client</button>`}</td>
+  </tr>`;
+}
+function dashScheduleTable(rows) {
+  if (!rows.length) return '<div class="empty">No sessions today.</div>';
+  return `<div class="sched-table-wrap"><table class="sched-table">
+    <thead><tr><th>Time</th><th>Client</th><th>Type</th><th>Location</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(dashScheduleRow).join('')}</tbody>
+  </table></div>`;
+}
+// Real, computed from actual appointment data — not a fabricated forecast.
+function upcomingWeekRows() {
+  const base = new Date(); base.setHours(0, 0, 0, 0);
+  let html = '';
+  for (let i = 1; i <= 4; i++) {
+    const d = new Date(base); d.setDate(base.getDate() + i);
+    const iso = isoDate(d);
+    const count = db.appointments.filter(a => a.date === iso).length;
+    html += `<div class="week-row"><span class="week-day">${esc(d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}</span>
+      <span class="week-count"><span class="count-chip">${count}</span></span></div>`;
+  }
+  return html;
+}
+
+function therapistDashboardHtml() {
+  const t = todayIso();
+  const today = db.appointments.filter(a => a.date === t).sort((x, y) => x.time.localeCompare(y.time));
+  const videoCount = today.filter(a => a.type !== 'in-person').length;
+  const pending = pendingNoteAppointments();
+  const followUps = followUpClients();
+  const newReqs = (db.appointmentRequests || []).filter(r => r.status === 'new');
+
+  const attention = newReqs.map(r =>
+    attnRow(ICONS.calendarPlus, `Booking request — ${r.name}`,
+      `${fmtDate(r.preferredDate)} ${fmtTime(r.preferredTime)} · ${r.service || 'General'}`,
+      "showView('requests')"))
+    .concat(pending.map(({ appt, patient }) =>
+      attnRow(ICONS.fileText, `Clinical note pending — ${patient.name}`, `Session on ${fmtDate(appt.date)}`,
+        `openPatientDetail('${patient.id}');openRecordModal()`)))
+    .concat(followUps.map(p =>
+      attnRow(ICONS.users, `Follow-up due — ${p.name}`, `${FOLLOW_UP_DAYS}+ days since their last visit`,
+        `openApptModal('${p.id}')`)));
+
+  return `
+    <div class="stat-grid dash-block">
+      ${statTile(ICONS.calendar, 'tint-navy', today.length, "Today's Sessions", today.length ? `${videoCount} virtual, ${today.length - videoCount} in-person` : '')}
+      ${statTile(ICONS.fileText, 'tint-gold', pending.length, 'Pending Notes', 'Needs your attention')}
+      ${statTile(ICONS.users, 'tint-peach', followUps.length, 'Follow-ups', followUps.length ? `${FOLLOW_UP_DAYS}+ days since last visit` : 'All caught up')}
+      ${statTile(ICONS.clipboard, 'tint-navy', newReqs.length, 'New Requests', newReqs.length ? 'From website' : 'None waiting')}
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <div class="card-bar-head"><h2>${ICONS.calendar} Today's Schedule</h2>
+            <a href="#" class="link-white" onclick="showView('schedule');return false">View full schedule ${ICONS.chevronRight}</a></div>
+          ${dashScheduleTable(today)}
+        </div>
+        <div class="card">
+          <h2>Quick Actions</h2>
+          ${qaGrid([
+    { icon: ICONS.clipboard, label: 'New Clinical Note', primary: true, onclick: "showView('patients');toast('Select a client to add a clinical note')" },
+    { icon: ICONS.plusUser, label: 'Add Patient', onclick: 'openPatientModal()' },
+    { icon: ICONS.calendarPlus, label: 'Schedule Appointment', onclick: 'openApptModal()' },
+    { icon: ICONS.users, label: 'Patient List', onclick: "showView('patients')" }
+  ])}
+        </div>
       </div>
-      <b>${money(Number(inv.amount) - paidAmount(inv))}</b>
-    </div>`).join('') : '<div class="empty">Everything is paid up. 🎉</div>';
+      <div>
+        <div class="card">
+          <h2>Needs Your Attention${attention.length ? ` <span class="badge badge-partial">${attention.length}</span>` : ''}</h2>
+          ${attention.length ? attention.join('') : '<div class="attn-empty">✓ Nothing needs your attention right now.</div>'}
+        </div>
+        <div class="card">
+          <div class="row-between"><h2 style="margin:0">Upcoming This Week</h2>
+            <a href="#" onclick="showView('schedule');setScheduleMode('week');return false" style="font-size:12.5px;font-weight:700">View calendar</a></div>
+          ${upcomingWeekRows()}
+        </div>
+      </div>
+    </div>`;
+}
 
-  document.getElementById('empty-state').style.display =
-    (db.patients.length || db.appointments.length) ? 'none' : '';
+function staffDashboardHtml() {
+  const t = todayIso();
+  const today = db.appointments.filter(a => a.date === t).sort((x, y) => x.time.localeCompare(y.time));
+  const checkedIn = today.filter(a => a.checkedIn).length;
+  const due = db.invoices.reduce((s, i) => s + Math.max(0, Number(i.amount) - paidAmount(i)), 0);
+  const unpaid = db.invoices.filter(i => invoiceStatus(i) !== 'paid').sort((x, y) => x.date.localeCompare(y.date));
+  const newReqs = (db.appointmentRequests || []).filter(r => r.status === 'new');
+
+  const attention = newReqs.map(r =>
+    attnRow(ICONS.calendarPlus, `Booking request — ${r.name}`,
+      `${fmtDate(r.preferredDate)} ${fmtTime(r.preferredTime)} · ${r.service || 'General'}`,
+      "showView('requests')"))
+    .concat(unpaid.map(inv =>
+      attnRow(ICONS.dollar, `Payment due — ${patientName(inv.patientId)}`,
+        `${money(Number(inv.amount) - paidAmount(inv))} · ${esc(inv.description)}`,
+        `openPaymentModal('${inv.id}')`)));
+
+  return `
+    <div class="stat-grid dash-block">
+      ${statTile(ICONS.calendar, 'tint-navy', today.length, "Today's Appointments", '')}
+      ${statTile(ICONS.users, 'tint-gold', `${checkedIn}/${today.length}`, 'Checked In', '')}
+      ${statTile(ICONS.dollar, 'tint-peach', money(due), 'Payments Due', '')}
+      ${statTile(ICONS.clipboard, 'tint-navy', newReqs.length, 'New Requests', newReqs.length ? 'From website' : 'None waiting')}
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <div class="card-bar-head"><h2>${ICONS.calendar} Today's Appointments</h2>
+            <a href="#" class="link-white" onclick="showView('schedule');return false">View full schedule ${ICONS.chevronRight}</a></div>
+          ${today.length ? today.map(dashStaffApptRow).join('') : '<div class="empty">No appointments today.</div>'}
+        </div>
+        <div class="card">
+          <h2>Quick Actions</h2>
+          ${qaGrid([
+    { icon: ICONS.calendarPlus, label: 'New Appointment', primary: true, onclick: 'openApptModal()' },
+    { icon: ICONS.clipboard, label: 'Review Requests', onclick: "showView('requests')" },
+    { icon: ICONS.plusUser, label: 'Add Patient', onclick: 'openPatientModal()' },
+    { icon: ICONS.dollar, label: 'View Billing', onclick: "showView('billing')" }
+  ])}
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Pending Tasks${attention.length ? ` <span class="badge badge-partial">${attention.length}</span>` : ''}</h2>
+          ${attention.length ? attention.join('') : '<div class="attn-empty">✓ No pending tasks.</div>'}
+        </div>
+        <div class="card">
+          <div class="row-between"><h2 style="margin:0">Upcoming This Week</h2>
+            <a href="#" onclick="showView('schedule');setScheduleMode('week');return false" style="font-size:12.5px;font-weight:700">View calendar</a></div>
+          ${upcomingWeekRows()}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDashboard() {
+  const now = new Date();
+  const mainEl = document.getElementById('dash-date-main');
+  const subEl = document.getElementById('dash-date-sub');
+  if (mainEl) mainEl.textContent = now.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  if (subEl) subEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long' });
+
+  const u = currentUser();
+  const greetEl = document.getElementById('dash-greeting');
+  const content = document.getElementById('dash-content');
+  if (!u || u.role === 'patient') {
+    // Before login, or for patient logins (their dashboard is the Portal view) — nothing to build here.
+    if (greetEl) greetEl.textContent = 'Dashboard';
+    if (content) content.innerHTML = '';
+    return;
+  }
+  greetEl.textContent = `${greeting()}, ${u.name}`;
+
+  // Always render the real dashboard shell (empty widgets are fine). Sample data is an
+  // optional banner — never a gate that hides the UI until clicked.
+  const empty = !db.patients.length && !db.appointments.length;
+  const tip = empty ? `<div class="dash-empty-tip card">
+      <div>
+        <strong>Your practice is empty</strong>
+        <p class="muted small" style="margin:4px 0 0">Add a patient, or load sample data to explore the dashboard with example sessions.</p>
+      </div>
+      <div class="btn-row">
+        ${qa('+ Add patient', 'openPatientModal()', true)}
+        ${qa('Load sample data', 'loadSampleData()')}
+      </div>
+    </div>` : '';
+
+  content.innerHTML = tip + (u.role === 'practitioner' ? therapistDashboardHtml() : staffDashboardHtml());
+}
+
+/* ============ Public website + appointment requests ============ */
+function togglePubNav() {
+  const nav = document.getElementById('pub-nav');
+  const btn = document.querySelector('.pub-nav-toggle');
+  const open = nav.classList.toggle('show');
+  btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function closePubNav() {
+  document.getElementById('pub-nav')?.classList.remove('show');
+  document.querySelector('.pub-nav-toggle')?.setAttribute('aria-expanded', 'false');
+}
+function scrollToBooking() {
+  closePubNav();
+  document.getElementById('pub-book')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function prefillService(name) {
+  const el = document.getElementById('book-service');
+  if (el) {
+    const match = [...el.options].find(o => o.textContent === name || o.innerHTML === name);
+    if (match) el.value = match.value;
+  }
+  scrollToBooking();
+}
+function prefillType(type) {
+  const el = document.getElementById('book-type');
+  if (el) el.value = type;
+  scrollToBooking();
+}
+
+function renderPublicSite() {
+  const year = document.getElementById('pub-year');
+  if (year) year.textContent = String(new Date().getFullYear());
+
+  const list = document.getElementById('pub-therapist-list');
+  if (!list) return;
+  const practitioners = (db.users || []).filter(u => u.role === 'practitioner');
+  if (!practitioners.length) {
+    list.innerHTML = `<article class="pub-therapist">
+      <div class="avatar-lg">MC</div>
+      <h3>MindCare Practitioner</h3>
+      <div class="title">Clinical therapist</div>
+      <div class="specs">Directory fills in once a practitioner account is set up.</div>
+      <button type="button" class="btn btn-sm" onclick="scrollToBooking()">Request appointment</button>
+    </article>`;
+    return;
+  }
+  list.innerHTML = practitioners.map(u => `<article class="pub-therapist">
+    <div class="avatar-lg">${esc(initials(u.name))}</div>
+    <h3>${esc(u.name)}</h3>
+    <div class="title">Clinical therapist</div>
+    <div class="specs">Anxiety · Mood · Life transitions</div>
+    <button type="button" class="btn btn-sm" onclick="scrollToBooking()">Request appointment</button>
+  </article>`).join('');
+
+  // Prefer tomorrow as default preferred date when empty
+  const dateInput = document.querySelector('#booking-form [name="preferredDate"]');
+  if (dateInput && !dateInput.value) {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    dateInput.value = isoDate(d);
+    dateInput.min = todayIso();
+  }
+}
+
+function submitBookingRequest(e) {
+  e.preventDefault();
+  const err = document.getElementById('book-error');
+  if (err) err.textContent = '';
+  const f = new FormData(e.target);
+  const name = (f.get('name') || '').trim();
+  const email = (f.get('email') || '').trim();
+  if (!name || !email) {
+    if (err) err.textContent = 'Name and email are required.';
+    return;
+  }
+  const req = {
+    id: uid(),
+    createdAt: new Date().toISOString(),
+    name,
+    email,
+    phone: (f.get('phone') || '').trim(),
+    payerType: f.get('payerType') || 'self-pay',
+    preferredDate: f.get('preferredDate'),
+    preferredTime: f.get('preferredTime'),
+    service: f.get('service'),
+    sessionType: f.get('sessionType') || 'video',
+    notes: (f.get('notes') || '').trim(),
+    status: 'new', // new | confirmed | declined
+    patientId: null,
+    appointmentId: null
+  };
+  db.appointmentRequests = db.appointmentRequests || [];
+  db.appointmentRequests.unshift(req);
+  save(); // renderAll() is page-guarded, so this is safe to call from index.html too
+
+  const panel = document.getElementById('booking-panel');
+  if (panel) {
+    panel.innerHTML = `<div class="pub-book-success">
+      <div class="ok-ico">✓</div>
+      <h3>Request received</h3>
+      <p class="muted">Thanks, ${esc(name)}. Our team will review your preferred time
+        (${esc(fmtDate(req.preferredDate))} at ${esc(fmtTime(req.preferredTime))}) and follow up.
+        This is not a confirmed appointment yet.</p>
+      <button type="button" class="btn" onclick="resetBookingForm()">Submit another request</button>
+    </div>`;
+  }
+  toast('Appointment request submitted');
+}
+
+function resetBookingForm() {
+  const panel = document.getElementById('booking-panel');
+  if (!panel) return;
+  panel.innerHTML = `
+    <h3>Request an appointment</h3>
+    <p class="muted small">This saves a request on this device for the clinic team to review. It does <b>not</b> confirm a slot until staff accepts it.</p>
+    <form id="booking-form" onsubmit="submitBookingRequest(event)">
+      <div class="form-row">
+        <label>Full name<input class="input" name="name" required autocomplete="name"></label>
+        <label>Email<input class="input" type="email" name="email" required autocomplete="email"></label>
+      </div>
+      <div class="form-row">
+        <label>Phone<input class="input" name="phone" autocomplete="tel"></label>
+        <label>Payer type
+          <select class="input" name="payerType" required>
+            <option value="self-pay">Self-pay</option>
+            <option value="insurance">Insurance</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Preferred date<input class="input" type="date" name="preferredDate" required></label>
+        <label>Preferred time<input class="input" type="time" name="preferredTime" required></label>
+      </div>
+      <div class="form-row">
+        <label>Focus area
+          <select class="input" name="service" id="book-service">
+            <option>Anxiety &amp; Stress</option>
+            <option>Depression &amp; Mood</option>
+            <option>Relationships</option>
+            <option>Trauma &amp; Recovery</option>
+            <option>Life Transitions</option>
+            <option>Personal Growth</option>
+            <option>General / Not sure yet</option>
+          </select>
+        </label>
+        <label>Session type
+          <select class="input" name="sessionType" id="book-type">
+            <option value="video">Virtual</option>
+            <option value="in-person">In-person</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Anything we should know?<textarea class="input" name="notes" rows="3" placeholder="Optional"></textarea></label>
+      </div>
+      <div class="auth-error" id="book-error"></div>
+      <button class="btn btn-primary" type="submit">Submit request</button>
+    </form>`;
+  renderPublicSite();
+}
+
+function setRequestFilter(f, btn) {
+  requestFilter = f;
+  document.querySelectorAll('#request-filters .chip').forEach(c => c.classList.toggle('active', c === btn));
+  renderRequests();
+}
+
+function renderRequests() {
+  const list = document.getElementById('request-list');
+  const stats = document.getElementById('requests-stats');
+  if (!list) return;
+  if (!requireStaffAccess()) {
+    list.innerHTML = '<div class="empty">Staff access required.</div>';
+    return;
+  }
+  const all = db.appointmentRequests || [];
+  const neu = all.filter(r => r.status === 'new').length;
+  const conf = all.filter(r => r.status === 'confirmed').length;
+  const dec = all.filter(r => r.status === 'declined').length;
+  if (stats) {
+    stats.innerHTML = `
+      ${statTile(ICONS.clipboard, 'tint-gold', neu, 'New requests', 'Awaiting review')}
+      ${statTile(ICONS.calendar, 'tint-navy', conf, 'Confirmed', 'Became appointments')}
+      ${statTile(ICONS.users, 'tint-peach', dec, 'Declined', '')}`;
+  }
+  const rows = all.filter(r => requestFilter === 'all' ? true : r.status === requestFilter);
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty">${requestFilter === 'new' ? 'No new booking requests.' : 'No requests in this filter.'}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(r => {
+    const statusBadge = r.status === 'new' ? 'badge-partial' : r.status === 'confirmed' ? 'badge-paid' : 'badge-unpaid';
+    return `<div class="row">
+      <div class="row-main">
+        <div class="row-title">${esc(r.name)} <span class="badge ${statusBadge}">${esc(r.status)}</span>
+          <span class="badge ${r.sessionType === 'in-person' ? 'badge-inperson' : 'badge-video'}">${r.sessionType === 'in-person' ? 'In-person' : 'Virtual'}</span></div>
+        <div class="row-sub">${esc(fmtDate(r.preferredDate))} · ${esc(fmtTime(r.preferredTime))} · ${esc(r.service || '')}
+          · ${esc(r.payerType)} · ${esc(r.email)}${r.phone ? ' · ' + esc(r.phone) : ''}</div>
+        ${r.notes ? `<div class="row-sub">${esc(r.notes)}</div>` : ''}
+      </div>
+      <div class="btn-row">
+        ${r.status === 'new' ? `
+          <button type="button" class="btn btn-sm btn-primary" onclick="confirmBookingRequest('${r.id}')">Confirm</button>
+          <button type="button" class="btn btn-sm" onclick="declineBookingRequest('${r.id}')">Decline</button>` : ''}
+        ${r.patientId ? `<button type="button" class="btn btn-sm" onclick="openPatientDetail('${r.patientId}')">View client</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function findOrCreatePatientFromRequest(r) {
+  const email = (r.email || '').toLowerCase();
+  let p = db.patients.find(x => (x.email || '').toLowerCase() === email && email);
+  if (!p) {
+    p = db.patients.find(x => x.name.toLowerCase() === r.name.toLowerCase() && (!email || !(x.email)));
+  }
+  if (!p) {
+    p = {
+      id: uid(),
+      name: r.name,
+      email: r.email || '',
+      phone: r.phone || '',
+      dob: '',
+      insurance: r.payerType === 'insurance' ? 'Insurance (from booking request)' : (r.payerType === 'self-pay' ? 'Self-pay' : ''),
+      emergency: '',
+      notes: r.notes ? `Booking request note: ${r.notes}` : '',
+      records: [],
+      created: todayIso(),
+      payerType: r.payerType
+    };
+    db.patients.push(p);
+  } else {
+    if (!p.email && r.email) p.email = r.email;
+    if (!p.phone && r.phone) p.phone = r.phone;
+    if (!p.payerType) p.payerType = r.payerType;
+  }
+  return p;
+}
+
+function confirmBookingRequest(id) {
+  if (!requireStaffAccess()) return;
+  const r = (db.appointmentRequests || []).find(x => x.id === id);
+  if (!r || r.status !== 'new') return;
+  const patient = findOrCreatePatientFromRequest(r);
+  const appt = {
+    id: uid(),
+    patientId: patient.id,
+    date: r.preferredDate,
+    time: r.preferredTime,
+    duration: 50,
+    type: r.sessionType === 'in-person' ? 'in-person' : 'video',
+    reason: r.service || 'Intake',
+    location: r.sessionType === 'in-person' ? 'Clinic' : '',
+    link: r.sessionType === 'in-person' ? '' : (db.settings?.zoomLink || ''),
+    checkedIn: false,
+    fromRequestId: r.id
+  };
+  db.appointments.push(appt);
+  r.status = 'confirmed';
+  r.patientId = patient.id;
+  r.appointmentId = appt.id;
+  save();
+  toast(`Confirmed — ${patient.name} booked ${fmtDate(appt.date)}`);
+}
+
+function declineBookingRequest(id) {
+  if (!requireStaffAccess()) return;
+  const r = (db.appointmentRequests || []).find(x => x.id === id);
+  if (!r || r.status !== 'new') return;
+  if (!confirm(`Decline request from ${r.name}?`)) return;
+  r.status = 'declined';
+  save();
+  toast('Request declined');
 }
 
 /* ============ Render everything ============ */
 function renderAll() {
-  renderDashboard();
-  renderPatients();
-  renderSchedule();
-  renderVideo();
-  renderBilling();
-  renderReportSelect();
-  renderUsers();
-  renderPortal();
-  applyRoleUI();
+  // dashboard.html and index.html share this file but only one of these root
+  // elements exists per page — guard so save() is safe to call from either.
+  // Also gated on currentUser(): #app-shell exists in the DOM (just CSS-hidden)
+  // before login, so without this check patient data would render into a
+  // hidden-but-inspectable DOM subtree before authentication completes.
+  if (document.getElementById('app-shell') && currentUser()) {
+    renderDashboard();
+    renderPatients();
+    renderSchedule();
+    renderRequests();
+    renderVideo();
+    renderBilling();
+    renderReportSelect();
+    renderUsers();
+    renderPortal();
+    applyRoleUI();
+    renderNotifBadge();
+  }
+  if (document.getElementById('public-site') && !currentUser()) renderPublicSite();
 }
 
 renderAll();
