@@ -182,6 +182,11 @@ function renderAssessStep() {
       moderate: 'There is enough here to take seriously. A therapist or group can help you sort what to do next.',
       higher: 'This is taking up real space in your life. You do not have to hold it alone — matching with a clinician is a solid next step.'
     };
+    const tool = MC_ASSESSMENTS.find(x => x.id === assessId);
+    const result = { id: assessId, name: tool?.name || assessId, total, max, level, at: new Date().toISOString() };
+    window.lastMcAssessment = result;
+    try { sessionStorage.setItem('mc.lastAssessment', JSON.stringify(result)); } catch (_) {}
+    if (typeof syncAssessmentHidden === 'function') syncAssessmentHidden();
     if (bar) bar.style.width = '100%';
     body.innerHTML = `<div class="assess-result">
       <p class="pub-kicker">Your reflection</p>

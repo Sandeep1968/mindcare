@@ -13,6 +13,8 @@ db.users.forEach(u => { if (u.role === 'doctor') u.role = 'practitioner'; });
 let currentPatientId = null;
 let apptFilter = 'upcoming';
 let requestFilter = 'new';
+let requestKind = 'all';
+let selectedRequestId = null;
 // dashboard.html?login=patient (linked from the public site's Patient Login buttons)
 // preselects the patient sign-in list; anything else defaults to staff/practitioner.
 let authIntent = new URLSearchParams(location.search).get('login') === 'patient' ? 'patient' : 'staff';
@@ -287,7 +289,7 @@ function applyRoleUI() {
 /* ============ Navigation ============ */
 const VIEW_TITLES = {
   dashboard: 'Dashboard', patients: 'Patients', 'patient-detail': 'Patient',
-  schedule: 'Schedule', requests: 'Appointments', video: 'Video Visits', billing: 'Billing & Payments',
+  schedule: 'Schedule', requests: 'Website bookings', video: 'Video Visits', billing: 'Billing & Payments',
   reports: 'Reports', data: 'Settings', portal: 'My Visits & Billing', comingsoon: 'Coming Soon'
 };
 function showView(name) {
@@ -1472,7 +1474,31 @@ function loadSampleData() {
   db = {
     users: db.users,
     settings: db.settings,
-    appointmentRequests: db.appointmentRequests || [],
+    appointmentRequests: [
+      {
+        id: uid(), createdAt: new Date().toISOString(), name: 'Alex Rivera',
+        email: 'alex.rivera@example.com', phone: '(555) 201-4400', payerType: 'self-pay',
+        preferredDate: plus(3), preferredTime: '10:30', service: 'Anxiety & Stress',
+        sessionType: 'video', sessionPref: 'video', notes: 'Evenings after work are the hardest.',
+        matchAudience: 'individual', therapistPref: 'woman', slidingScale: false,
+        preferredTherapist: 'Dr. Sarah Williams', matchCompleted: true, crisis: 'no',
+        match: { audience: 'individual', service: 'Anxiety & Stress', sessionType: 'video', therapistPref: 'woman', payerType: 'self-pay', slidingScale: 'no', crisis: 'no', preferredTherapist: 'Dr. Sarah Williams' },
+        assessment: { id: 'anxiety', name: 'Anxiety check-in', total: 11, max: 18, level: 'moderate', at: new Date().toISOString() },
+        status: 'new', patientId: null, appointmentId: null
+      },
+      {
+        id: uid(), createdAt: new Date().toISOString(), name: 'Jordan Blake',
+        email: 'jordan.blake@example.com', phone: '(555) 773-0192', payerType: 'insurance',
+        preferredDate: plus(5), preferredTime: '16:00', service: 'Relationships',
+        sessionType: 'in-person', sessionPref: 'in-person', notes: 'Partner may join the first visit.',
+        matchAudience: 'couples', therapistPref: 'any', slidingScale: false,
+        preferredTherapist: 'James Chen, LCSW', matchCompleted: true, crisis: 'no',
+        match: { audience: 'couples', service: 'Relationships', sessionType: 'in-person', therapistPref: 'any', payerType: 'insurance', slidingScale: 'no', crisis: 'no', preferredTherapist: 'James Chen, LCSW' },
+        assessment: { id: 'couples', name: 'Couples communication', total: 14, max: 18, level: 'higher', at: new Date().toISOString() },
+        status: 'new', patientId: null, appointmentId: null
+      },
+      ...(db.appointmentRequests || [])
+    ],
     patients: [p1, p2, p3],
     appointments: [
       { id: uid(), patientId: p1.id, date: todayIso(), time: '10:00', duration: '50', type: 'video', link: videoRoomLink(), reason: 'Weekly CBT session', location: '' },
@@ -1681,7 +1707,7 @@ function therapistDashboardHtml() {
         <div class="card">
           <h2>Quick Actions</h2>
           ${qaGrid([
-    { icon: ICONS.clipboard, label: 'New Clinical Note', primary: true, onclick: "showView('patients');toast('Select a client to add a clinical note')" },
+    { icon: ICONS.clipboard, label: 'Website bookings', primary: true, onclick: "showView('requests')" },
     { icon: ICONS.plusUser, label: 'Add Patient', onclick: 'openPatientModal()' },
     { icon: ICONS.calendarPlus, label: 'Schedule Appointment', onclick: 'openApptModal()' },
     { icon: ICONS.users, label: 'Patient List', onclick: "showView('patients')" }
@@ -1738,7 +1764,7 @@ function staffDashboardHtml() {
           <h2>Quick Actions</h2>
           ${qaGrid([
     { icon: ICONS.calendarPlus, label: 'New Appointment', primary: true, onclick: 'openApptModal()' },
-    { icon: ICONS.clipboard, label: 'Review Requests', onclick: "showView('requests')" },
+    { icon: ICONS.clipboard, label: 'Website bookings', onclick: "showView('requests')" },
     { icon: ICONS.plusUser, label: 'Add Patient', onclick: 'openPatientModal()' },
     { icon: ICONS.dollar, label: 'View Billing', onclick: "showView('billing')" }
   ])}
@@ -2121,6 +2147,24 @@ function applyMatchToBooking() {
   if (prefEl) prefEl.value = matchState.therapistPref;
   if (slideEl) slideEl.value = matchState.payerType === 'sliding' ? 'yes' : 'no';
   if (nameEl) nameEl.value = matchState.preferredTherapist || '';
+  const doneEl = document.getElementById('book-match-done');
+  const prefMeetEl = document.getElementById('book-session-pref');
+  const matchJsonEl = document.getElementById('book-match-json');
+  const crisisEl = document.getElementById('book-crisis');
+  if (doneEl) doneEl.value = 'yes';
+  if (prefMeetEl) prefMeetEl.value = matchState.sessionType || 'video';
+  if (crisisEl) crisisEl.value = matchState.crisis || 'no';
+  if (matchJsonEl) matchJsonEl.value = JSON.stringify({
+    audience: matchState.audience,
+    service: matchState.service,
+    sessionType: matchState.sessionType,
+    therapistPref: matchState.therapistPref,
+    payerType: matchState.payerType,
+    slidingScale: matchState.slidingScale,
+    crisis: matchState.crisis,
+    preferredTherapist: matchState.preferredTherapist
+  });
+  syncAssessmentHidden();
   const nameInput = document.querySelector('#booking-form [name="name"]');
   if (nameInput) {
     const wrap = nameInput.closest('label');
@@ -2157,6 +2201,7 @@ function finishMatchQuiz() {
 }
 
 function renderPublicSite() {
+  if (typeof syncAssessmentHidden === 'function') syncAssessmentHidden();
   const year = document.getElementById('pub-year');
   if (year) year.textContent = String(new Date().getFullYear());
 
@@ -2202,6 +2247,27 @@ function renderPublicSite() {
   }
 }
 
+function parseMaybeJson(raw) {
+  if (!raw || raw === 'null') return null;
+  try {
+    const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return v && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function lastAssessmentFromBrowser() {
+  try { return parseMaybeJson(sessionStorage.getItem('mc.lastAssessment')); } catch { return null; }
+}
+
+function syncAssessmentHidden() {
+  const el = document.getElementById('book-assess-json');
+  if (!el) return;
+  const data = window.lastMcAssessment || lastAssessmentFromBrowser();
+  el.value = data ? JSON.stringify(data) : '';
+}
+
 function submitBookingRequest(e) {
   e.preventDefault();
   const err = document.getElementById('book-error');
@@ -2213,6 +2279,11 @@ function submitBookingRequest(e) {
     if (err) err.textContent = 'Name and email are required.';
     return;
   }
+  syncAssessmentHidden();
+  const matchSnap = parseMaybeJson(f.get('matchJson')) || (matchCompleted ? { ...matchState } : null);
+  const assessment = parseMaybeJson(f.get('assessJson')) || lastAssessmentFromBrowser();
+  const sessionType = f.get('sessionType') || 'video';
+  const sessionPref = f.get('sessionPref') || matchSnap?.sessionType || sessionType;
   const req = {
     id: uid(),
     createdAt: new Date().toISOString(),
@@ -2223,13 +2294,18 @@ function submitBookingRequest(e) {
     preferredDate: f.get('preferredDate'),
     preferredTime: f.get('preferredTime'),
     service: f.get('service'),
-    sessionType: f.get('sessionType') || 'video',
+    sessionType,
+    sessionPref,
     notes: (f.get('notes') || '').trim(),
-    matchAudience: f.get('matchAudience') || 'individual',
-    therapistPref: f.get('therapistPref') || 'any',
-    slidingScale: f.get('slidingScale') === 'yes',
-    preferredTherapist: (f.get('preferredTherapist') || '').trim(),
-    status: 'new', // new | confirmed | declined
+    matchAudience: f.get('matchAudience') || matchSnap?.audience || 'individual',
+    therapistPref: f.get('therapistPref') || matchSnap?.therapistPref || 'any',
+    slidingScale: f.get('slidingScale') === 'yes' || matchSnap?.payerType === 'sliding',
+    preferredTherapist: (f.get('preferredTherapist') || matchSnap?.preferredTherapist || '').trim(),
+    matchCompleted: f.get('matchCompleted') === 'yes' || !!matchSnap,
+    crisis: f.get('crisis') || matchSnap?.crisis || 'no',
+    match: matchSnap,
+    assessment,
+    status: 'new',
     patientId: null,
     appointmentId: null
   };
@@ -2264,6 +2340,11 @@ function resetBookingForm() {
       <input type="hidden" name="therapistPref" id="book-therapist-pref" value="any">
       <input type="hidden" name="slidingScale" id="book-sliding" value="no">
       <input type="hidden" name="preferredTherapist" id="book-therapist-name" value="">
+      <input type="hidden" name="matchCompleted" id="book-match-done" value="no">
+      <input type="hidden" name="sessionPref" id="book-session-pref" value="">
+      <input type="hidden" name="crisis" id="book-crisis" value="no">
+      <input type="hidden" name="matchJson" id="book-match-json" value="">
+      <input type="hidden" name="assessJson" id="book-assess-json" value="">
       <div class="form-row">
         <label id="book-name-label">Full name<input class="input" name="name" required autocomplete="name"></label>
         <label>Email<input class="input" type="email" name="email" required autocomplete="email"></label>
@@ -2308,7 +2389,48 @@ function resetBookingForm() {
       <button class="btn btn-primary" type="submit">Submit request</button>
     </form>`;
   if (matchCompleted) applyMatchToBooking();
+  else syncAssessmentHidden();
   renderPublicSite();
+}
+
+function requestMeetKind(r) {
+  return r.sessionType === 'in-person' ? 'in-person' : 'video';
+}
+
+function requestMeetLabel(r) {
+  const kind = requestMeetKind(r) === 'in-person' ? 'In-person' : 'Virtual';
+  if (r.sessionPref === 'either') return `${kind} (flexible)`;
+  return kind;
+}
+
+function requestStatusBadge(status) {
+  const cls = status === 'new' ? 'badge-partial' : status === 'confirmed' ? 'badge-paid' : 'badge-unpaid';
+  return `<span class="badge ${cls}">${esc(status)}</span>`;
+}
+
+function requestMeetBadge(r) {
+  const inPerson = requestMeetKind(r) === 'in-person';
+  return `<span class="badge ${inPerson ? 'badge-inperson' : 'badge-video'}">${inPerson ? 'In-person' : 'Virtual'}</span>`
+    + (r.sessionPref === 'either' ? ' <span class="badge badge-partial">Flexible</span>' : '');
+}
+
+function dlRow(label, valueHtml) {
+  if (!valueHtml) return '';
+  return `<div class="req-dl"><dt>${esc(label)}</dt><dd>${valueHtml}</dd></div>`;
+}
+
+function updateNavRequestCount() {
+  const el = document.getElementById('nav-req-count');
+  if (!el) return;
+  const n = (db.appointmentRequests || []).filter(r => r.status === 'new').length;
+  el.textContent = n ? String(n) : '';
+  el.classList.toggle('hidden', n === 0);
+}
+
+function setRequestKind(kind, btn) {
+  requestKind = kind;
+  document.querySelectorAll('#request-kind-filters .chip').forEach(c => c.classList.toggle('active', c === btn));
+  renderRequests();
 }
 
 function setRequestFilter(f, btn) {
@@ -2317,48 +2439,111 @@ function setRequestFilter(f, btn) {
   renderRequests();
 }
 
+function selectWebsiteRequest(id) {
+  selectedRequestId = id;
+  renderRequests();
+}
+
+function filteredWebsiteRequests() {
+  const all = db.appointmentRequests || [];
+  return all.filter(r => {
+    const statusOk = requestFilter === 'all' || r.status === requestFilter;
+    const kindOk = requestKind === 'all' || requestMeetKind(r) === requestKind;
+    return statusOk && kindOk;
+  });
+}
+
+function renderRequestDetail(r) {
+  const panel = document.getElementById('request-detail');
+  if (!panel) return;
+  if (!r) {
+    panel.innerHTML = '<div class="empty">Select a booking to see matching answers and contact details.</div>';
+    return;
+  }
+  const assess = r.assessment;
+  const match = r.match;
+  const payer = r.slidingScale ? `${r.payerType || 'self-pay'} · sliding scale asked` : (r.payerType || '—');
+  panel.innerHTML = `
+    <p class="muted small" style="margin:0 0 6px">Submitted ${esc(r.createdAt ? fmtDate(r.createdAt.slice(0, 10)) : '—')} · Website</p>
+    <h2>${esc(r.name)}</h2>
+    <div class="btn-row" style="margin-bottom:12px">${requestMeetBadge(r)} ${requestStatusBadge(r.status)}</div>
+    ${dlRow('Session', esc(requestMeetLabel(r)))}
+    ${dlRow('Preferred time', `${esc(fmtDate(r.preferredDate))} · ${esc(fmtTime(r.preferredTime))}`)}
+    ${dlRow('Email', r.email ? `<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>` : '')}
+    ${dlRow('Phone', r.phone ? `<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>` : '—')}
+    ${dlRow('Focus area', esc(r.service || '—'))}
+    ${dlRow('Who it’s for', esc(audienceLabel(r.matchAudience || match?.audience || 'individual')))}
+    ${dlRow('Therapist pref.', esc(prefLabel(r.therapistPref || match?.therapistPref || 'any')))}
+    ${dlRow('Named clinician', esc(r.preferredTherapist || match?.preferredTherapist || 'No named preference'))}
+    ${dlRow('Payer', esc(payer))}
+    ${dlRow('Crisis screen', r.crisis === 'yes' ? '<strong>Yes — flagged urgent help</strong>' : 'No / not reported')}
+    ${r.notes ? dlRow('Client note', esc(r.notes)) : ''}
+    ${r.matchCompleted || match ? `<div class="req-block">
+      <h3>Matching questionnaire</h3>
+      ${dlRow('Care for', esc(audienceLabel(match?.audience || r.matchAudience || 'individual')))}
+      ${dlRow('Help with', esc(match?.service || r.service || '—'))}
+      ${dlRow('Meet how', esc(match?.sessionType === 'either' ? 'Either is fine' : match?.sessionType === 'in-person' ? 'In-person' : 'Virtual'))}
+      ${dlRow('Pay plan', esc(match?.payerType === 'sliding' ? 'Ask about sliding scale' : match?.payerType === 'insurance' ? 'Insurance' : 'Self-pay'))}
+    </div>` : '<div class="req-block"><h3>Matching questionnaire</h3><p class="muted small">This person booked without completing Get matched.</p></div>'}
+    ${assess ? `<div class="req-block">
+      <h3>Self-assessment</h3>
+      ${dlRow('Tool', esc(assess.name || assess.id || 'Check-in'))}
+      ${dlRow('Strain level', esc(assess.level || '—'))}
+      ${dlRow('Score', assess.total != null ? `${esc(String(assess.total))} / ${esc(String(assess.max || '—'))}` : '—')}
+      <p class="muted small">Reflection tool only — not a diagnosis.</p>
+    </div>` : '<div class="req-block"><h3>Self-assessment</h3><p class="muted small">No self-check-in was attached to this request.</p></div>'}
+    <div class="btn-row req-actions">
+      ${r.status === 'new' ? `
+        <button type="button" class="btn btn-sm btn-primary" onclick="confirmBookingRequest('${r.id}')">Confirm on schedule</button>
+        <button type="button" class="btn btn-sm" onclick="declineBookingRequest('${r.id}')">Decline</button>` : ''}
+      ${r.patientId ? `<button type="button" class="btn btn-sm" onclick="openPatientDetail('${r.patientId}')">View client</button>` : ''}
+    </div>`;
+}
+
 function renderRequests() {
   const list = document.getElementById('request-list');
   const stats = document.getElementById('requests-stats');
+  updateNavRequestCount();
   if (!list) return;
   if (!requireStaffAccess()) {
     list.innerHTML = '<div class="empty">Staff access required.</div>';
+    renderRequestDetail(null);
     return;
   }
   const all = db.appointmentRequests || [];
-  const neu = all.filter(r => r.status === 'new').length;
+  const neu = all.filter(r => r.status === 'new');
+  const virtualNew = neu.filter(r => requestMeetKind(r) !== 'in-person').length;
+  const inPersonNew = neu.filter(r => requestMeetKind(r) === 'in-person').length;
   const conf = all.filter(r => r.status === 'confirmed').length;
-  const dec = all.filter(r => r.status === 'declined').length;
   if (stats) {
     stats.innerHTML = `
-      ${statTile(ICONS.clipboard, 'tint-gold', neu, 'New requests', 'Awaiting review')}
-      ${statTile(ICONS.calendar, 'tint-navy', conf, 'Confirmed', 'Became appointments')}
-      ${statTile(ICONS.users, 'tint-peach', dec, 'Declined', '')}`;
+      ${statTile(ICONS.clipboard, 'tint-gold', neu.length, 'New requests', 'Awaiting review')}
+      ${statTile(ICONS.calendar, 'tint-navy', virtualNew, 'New virtual', 'Online meet')}
+      ${statTile(ICONS.users, 'tint-peach', inPersonNew, 'New in-person', 'Clinic office')}
+      ${statTile(ICONS.calendar, 'tint-navy', conf, 'Confirmed', 'On the schedule')}`;
   }
-  const rows = all.filter(r => requestFilter === 'all' ? true : r.status === requestFilter);
+  const kindBtns = document.getElementById('request-kind-filters');
+  if (kindBtns) {
+    const vCount = all.filter(r => requestMeetKind(r) === 'video').length;
+    const iCount = all.filter(r => requestMeetKind(r) === 'in-person').length;
+    kindBtns.querySelector('[data-rkind="all"]')?.replaceChildren(document.createTextNode(`All (${all.length})`));
+    kindBtns.querySelector('[data-rkind="video"]')?.replaceChildren(document.createTextNode(`Virtual (${vCount})`));
+    kindBtns.querySelector('[data-rkind="in-person"]')?.replaceChildren(document.createTextNode(`In-person (${iCount})`));
+  }
+  const rows = filteredWebsiteRequests();
+  if (selectedRequestId && !rows.some(r => r.id === selectedRequestId)) selectedRequestId = rows[0]?.id || null;
+  if (!selectedRequestId && rows[0]) selectedRequestId = rows[0].id;
   if (!rows.length) {
-    list.innerHTML = `<div class="empty">${requestFilter === 'new' ? 'No new booking requests.' : 'No requests in this filter.'}</div>`;
+    list.innerHTML = `<div class="empty">${requestFilter === 'new' && requestKind === 'all' ? 'No new website bookings yet.' : 'No bookings in this filter.'}</div>`;
+    renderRequestDetail(null);
     return;
   }
-  list.innerHTML = rows.map(r => {
-    const statusBadge = r.status === 'new' ? 'badge-partial' : r.status === 'confirmed' ? 'badge-paid' : 'badge-unpaid';
-    return `<div class="row">
-      <div class="row-main">
-        <div class="row-title">${esc(r.name)} <span class="badge ${statusBadge}">${esc(r.status)}</span>
-          <span class="badge ${r.sessionType === 'in-person' ? 'badge-inperson' : 'badge-video'}">${r.sessionType === 'in-person' ? 'In-person' : 'Virtual'}</span></div>
-        <div class="row-sub">${esc(fmtDate(r.preferredDate))} · ${esc(fmtTime(r.preferredTime))} · ${esc(r.service || '')}
-          · ${esc(r.payerType)} · ${esc(r.email)}${r.phone ? ' · ' + esc(r.phone) : ''}</div>
-        ${r.matchAudience || r.therapistPref || r.preferredTherapist ? `<div class="row-sub">Match: ${esc(audienceLabel(r.matchAudience || 'individual'))} · ${esc(prefLabel(r.therapistPref || 'any'))}${r.preferredTherapist ? ' · Prefers ' + esc(r.preferredTherapist) : ''}${r.slidingScale ? ' · Sliding scale' : ''}</div>` : ''}
-        ${r.notes ? `<div class="row-sub">${esc(r.notes)}</div>` : ''}
-      </div>
-      <div class="btn-row">
-        ${r.status === 'new' ? `
-          <button type="button" class="btn btn-sm btn-primary" onclick="confirmBookingRequest('${r.id}')">Confirm</button>
-          <button type="button" class="btn btn-sm" onclick="declineBookingRequest('${r.id}')">Decline</button>` : ''}
-        ${r.patientId ? `<button type="button" class="btn btn-sm" onclick="openPatientDetail('${r.patientId}')">View client</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  list.innerHTML = rows.map(r => `<button type="button" class="req-card${r.id === selectedRequestId ? ' active' : ''}" onclick="selectWebsiteRequest('${r.id}')">
+      <div class="row-title">${esc(r.name)} ${requestStatusBadge(r.status)} ${requestMeetBadge(r)}</div>
+      <div class="row-sub">${esc(fmtDate(r.preferredDate))} · ${esc(fmtTime(r.preferredTime))} · ${esc(r.service || 'General')}</div>
+      <div class="row-sub">${esc(audienceLabel(r.matchAudience || 'individual'))}${r.preferredTherapist ? ' · Prefers ' + esc(r.preferredTherapist) : ''}${r.assessment ? ' · Assessment attached' : ''}</div>
+    </button>`).join('');
+  renderRequestDetail(all.find(x => x.id === selectedRequestId) || rows[0]);
 }
 
 function findOrCreatePatientFromRequest(r) {
@@ -2378,7 +2563,9 @@ function findOrCreatePatientFromRequest(r) {
       emergency: '',
       notes: [
         r.notes ? `Booking request note: ${r.notes}` : '',
-        r.matchAudience ? `Match: ${audienceLabel(r.matchAudience)}; therapist ${prefLabel(r.therapistPref || 'any')}${r.slidingScale ? '; sliding scale requested' : ''}` : ''
+        r.matchAudience ? `Match: ${audienceLabel(r.matchAudience)}; therapist ${prefLabel(r.therapistPref || 'any')}${r.slidingScale ? '; sliding scale requested' : ''}` : '',
+        r.sessionType ? `Session: ${r.sessionType === 'in-person' ? 'In-person' : 'Virtual'}${r.sessionPref === 'either' ? ' (client said either is fine)' : ''}` : '',
+        r.assessment ? `Self-assessment: ${r.assessment.name || r.assessment.id} — ${r.assessment.level || 'n/a'} (${r.assessment.total}/${r.assessment.max})` : ''
       ].filter(Boolean).join('\n'),
       records: [],
       created: todayIso(),
@@ -2415,6 +2602,7 @@ function confirmBookingRequest(id) {
   r.status = 'confirmed';
   r.patientId = patient.id;
   r.appointmentId = appt.id;
+  selectedRequestId = r.id;
   save();
   toast(`Confirmed — ${patient.name} booked ${fmtDate(appt.date)}`);
 }
@@ -2425,6 +2613,7 @@ function declineBookingRequest(id) {
   if (!r || r.status !== 'new') return;
   if (!confirm(`Decline request from ${r.name}?`)) return;
   r.status = 'declined';
+  selectedRequestId = r.id;
   save();
   toast('Request declined');
 }

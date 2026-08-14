@@ -6,7 +6,7 @@
 <title>MindCare — Compassion. Clarity. Care.</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23003E7E%22/><text x=%2250%22 y=%2270%22 font-size=%2254%22 font-family=%22sans-serif%22 font-weight=%22700%22 fill=%22%23FFB81C%22 text-anchor=%22middle%22>M</text></svg>">
 <!-- Bump ?v= on every deploy so browsers never mix cached old assets with a new page -->
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
 
@@ -395,6 +395,11 @@
         <input type="hidden" name="therapistPref" id="book-therapist-pref" value="any">
         <input type="hidden" name="slidingScale" id="book-sliding" value="no">
         <input type="hidden" name="preferredTherapist" id="book-therapist-name" value="">
+        <input type="hidden" name="matchCompleted" id="book-match-done" value="no">
+        <input type="hidden" name="sessionPref" id="book-session-pref" value="">
+        <input type="hidden" name="crisis" id="book-crisis" value="no">
+        <input type="hidden" name="matchJson" id="book-match-json" value="">
+        <input type="hidden" name="assessJson" id="book-assess-json" value="">
         <div class="form-row">
           <label id="book-name-label">Full name<input class="input" name="name" required autocomplete="name"></label>
           <label>Email<input class="input" type="email" name="email" required autocomplete="email"></label>
@@ -582,7 +587,7 @@
 
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=18"></script>
-<script src="site-catalog.js?v=21"></script>
+<script src="app.js?v=22"></script>
+<script src="site-catalog.js?v=22"></script>
 </body>
 </html>
