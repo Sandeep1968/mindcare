@@ -1806,6 +1806,7 @@ function closePubNav() {
 }
 function scrollToBooking() {
   closePubNav();
+  if (typeof showMcView === 'function') showMcView('home');
   document.getElementById('pub-book')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function prefillService(name) {
@@ -1822,30 +1823,375 @@ function prefillType(type) {
   scrollToBooking();
 }
 
+const MATCH_STEPS = 7; // 6 questions + suggested match
+let matchStep = 0;
+let matchState = defaultMatchState();
+let matchCompleted = false;
+let matchQuizPrevFocus = null;
+let matchAnimDir = 'fwd';
+let matchBusy = false;
+let matchSuggestIndex = 0;
+
+const CLINIC_THERAPISTS = [
+  { name: 'Dr. Sarah Williams', title: 'Clinical Psychologist', specs: 'Anxiety · Trauma · Mood', img: 'images/therapist-1.jpg', gender: 'woman', tags: ['Anxiety & Stress', 'Trauma & Recovery', 'Depression & Mood'], audiences: ['individual', 'teen'] },
+  { name: 'James Chen, LCSW', title: 'Licensed Therapist', specs: 'Relationships · Life transitions', img: 'images/therapist-2.jpg', gender: 'man', tags: ['Relationships', 'Life Transitions'], audiences: ['individual', 'couples'] },
+  { name: 'Amira Patel, LPC', title: 'Counseling Specialist', specs: 'Stress · Personal growth', img: 'images/therapist-3.jpg', gender: 'woman', tags: ['Personal Growth', 'Anxiety & Stress', 'Life Transitions'], audiences: ['individual', 'teen'] }
+];
+
+function defaultMatchState() {
+  return {
+    audience: 'individual',
+    service: 'General / Not sure yet',
+    sessionType: 'video',
+    therapistPref: 'any',
+    payerType: 'self-pay',
+    slidingScale: 'no',
+    crisis: 'no',
+    preferredTherapist: ''
+  };
+}
+
+function rankedTherapists() {
+  return CLINIC_THERAPISTS
+    .map(t => {
+      let score = 1;
+      if (t.tags.includes(matchState.service)) score += 4;
+      if (matchState.therapistPref !== 'any' && t.gender === matchState.therapistPref) score += 3;
+      if (t.audiences.includes(matchState.audience)) score += 2;
+      if (matchState.audience === 'couples' && t.tags.includes('Relationships')) score += 3;
+      return { t, score };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+function currentSuggestedTherapist() {
+  const ranked = rankedTherapists().map(x => x.t);
+  const named = CLINIC_THERAPISTS.find(t => t.name === matchState.preferredTherapist)
+    || (matchState.preferredTherapist ? {
+      name: matchState.preferredTherapist,
+      title: 'Clinical therapist',
+      specs: 'From the clinic directory',
+      img: 'images/therapist-1.jpg',
+      gender: 'any',
+      tags: [],
+      audiences: ['individual']
+    } : null);
+  const ordered = named
+    ? [named, ...ranked.filter(t => t.name !== named.name)]
+    : ranked;
+  return ordered[matchSuggestIndex % ordered.length];
+}
+
+function openMatchQuiz(audience, presets) {
+  closePubNav();
+  matchState = defaultMatchState();
+  matchBusy = false;
+  matchSuggestIndex = 0;
+  matchAnimDir = 'fwd';
+  if (audience) matchState.audience = audience;
+  if (presets?.service) matchState.service = presets.service;
+  if (presets?.preferredTherapist) {
+    matchState.preferredTherapist = presets.preferredTherapist;
+    const idx = rankedTherapists().findIndex(x => x.t.name === presets.preferredTherapist);
+    matchSuggestIndex = idx >= 0 ? idx : 0;
+  }
+  if (presets?.skipToResult) {
+    matchStep = MATCH_STEPS - 1;
+  } else if (presets?.service && audience) {
+    matchStep = 2;
+  } else if (presets?.service) {
+    matchStep = 0;
+  } else if (audience) {
+    matchStep = 1;
+  } else {
+    matchStep = 0;
+  }
+  const modal = document.getElementById('match-quiz');
+  if (!modal) {
+    scrollToBooking();
+    return;
+  }
+  matchQuizPrevFocus = document.activeElement;
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  renderMatchQuiz();
+}
+
+function matchWithTherapist(name) {
+  openMatchQuiz(null, { preferredTherapist: name, skipToResult: true });
+}
+
+function closeMatchQuiz() {
+  const modal = document.getElementById('match-quiz');
+  modal?.classList.add('hidden');
+  document.body.style.overflow = '';
+  matchQuizPrevFocus?.focus?.();
+}
+
+function matchOption(value, selected, title, sub) {
+  return `<button type="button" class="match-opt${selected === value ? ' selected' : ''}" data-value="${esc(value)}">
+    <span class="match-check" aria-hidden="true"></span>
+    <span><strong>${title}</strong>${sub ? `<span>${sub}</span>` : ''}</span>
+  </button>`;
+}
+
+function renderMatchDots() {
+  const dots = document.getElementById('match-dots');
+  if (!dots) return;
+  const qCount = MATCH_STEPS - 1;
+  const atResult = matchStep >= qCount;
+  dots.innerHTML = Array.from({ length: qCount }, (_, i) =>
+    `<button type="button" class="match-dot${i === matchStep && !atResult ? ' current' : ''}${i < matchStep || atResult ? ' done' : ''}" data-step="${i}" aria-label="Question ${i + 1}"></button>`
+  ).join('');
+  dots.querySelectorAll('.match-dot').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = Number(btn.dataset.step);
+      if (Number.isNaN(n) || n > matchStep) return;
+      matchAnimDir = n < matchStep ? 'back' : 'fwd';
+      matchStep = n;
+      renderMatchQuiz();
+    });
+  });
+}
+
+function renderMatchQuiz() {
+  const body = document.getElementById('match-quiz-body');
+  const bar = document.getElementById('match-progress-bar');
+  const label = document.getElementById('match-step-label');
+  const back = document.getElementById('match-back');
+  const next = document.getElementById('match-next');
+  if (!body) return;
+  const qCount = MATCH_STEPS - 1;
+  const atResult = matchStep >= qCount;
+  if (bar) bar.style.width = `${(Math.min(matchStep + 1, qCount) / qCount) * 100}%`;
+  if (label) label.textContent = atResult ? 'Suggested match' : `Question ${matchStep + 1} of ${qCount}`;
+  if (back) back.disabled = matchStep === 0;
+  if (next) {
+    next.disabled = false;
+    next.textContent = atResult ? 'Request this therapist' : (matchStep === qCount - 1 ? 'See my match' : 'Continue');
+  }
+  renderMatchDots();
+
+  const s = matchState;
+  let html = '';
+  if (matchStep === 0) {
+    html = `<p class="match-q">Who is this care for?</p><div class="match-options" data-field="audience">
+      ${matchOption('individual', s.audience, 'For myself', 'Individual therapy')}
+      ${matchOption('couples', s.audience, 'For me and my partner', 'Couples / relationship work')}
+      ${matchOption('teen', s.audience, 'For my child or teen', 'A parent or guardian completes this request')}
+    </div>`;
+  } else if (matchStep === 1) {
+    html = `<p class="match-q">What would you like help with?</p><div class="match-options match-options-grid" data-field="service">
+      ${matchOption('Anxiety & Stress', s.service, 'Anxiety & Stress')}
+      ${matchOption('Depression & Mood', s.service, 'Depression & Mood')}
+      ${matchOption('Relationships', s.service, 'Relationships')}
+      ${matchOption('Trauma & Recovery', s.service, 'Trauma & Recovery')}
+      ${matchOption('Life Transitions', s.service, 'Life Transitions')}
+      ${matchOption('Personal Growth', s.service, 'Personal Growth')}
+      ${matchOption('General / Not sure yet', s.service, 'Not sure yet')}
+    </div>`;
+  } else if (matchStep === 2) {
+    html = `<p class="match-q">How would you like to meet?</p><div class="match-options" data-field="sessionType">
+      ${matchOption('video', s.sessionType, 'Virtual', 'Secure video from home')}
+      ${matchOption('in-person', s.sessionType, 'In-person', 'At our clinic office')}
+      ${matchOption('either', s.sessionType, 'Either is fine', 'We’ll suggest what’s available')}
+    </div>`;
+  } else if (matchStep === 3) {
+    html = `<p class="match-q">Any therapist preference?</p><div class="match-options" data-field="therapistPref">
+      ${matchOption('any', s.therapistPref, 'No preference')}
+      ${matchOption('woman', s.therapistPref, 'Prefer a woman')}
+      ${matchOption('man', s.therapistPref, 'Prefer a man')}
+    </div>`;
+  } else if (matchStep === 4) {
+    html = `<p class="match-q">How do you plan to pay?</p><div class="match-options" data-field="payerType">
+      ${matchOption('self-pay', s.payerType, 'Self-pay')}
+      ${matchOption('insurance', s.payerType, 'Insurance', 'We’ll confirm coverage when we review')}
+      ${matchOption('sliding', s.payerType, 'Ask about sliding scale', 'Need-based reduced fee if available')}
+    </div>`;
+  } else if (matchStep === 5) {
+    html = `<p class="match-q">Is anyone in immediate danger or crisis right now?</p>
+      <div class="match-options" data-field="crisis">
+        ${matchOption('no', s.crisis, 'No — continue matching')}
+        ${matchOption('yes', s.crisis, 'Yes — I need urgent help')}
+      </div>
+      ${s.crisis === 'yes' ? `<div class="match-crisis-box" style="margin-top:12px">
+        MindCare is not emergency care. Call <a href="tel:911">911</a> or <a href="tel:988">988</a> (U.S. Suicide &amp; Crisis Lifeline) now.
+        You can still request a therapy appointment later when it is safe to do so.
+      </div>` : ''}`;
+    if (next) next.textContent = s.crisis === 'yes' ? 'Close' : 'See my match';
+  } else {
+    const t = currentSuggestedTherapist();
+    matchState.preferredTherapist = t.name;
+    html = `<div class="match-result">
+      <p class="match-result-kicker">Based on your answers</p>
+      <div class="match-result-card">
+        <img src="${t.img}" alt="" width="72" height="72">
+        <div>
+          <h3>${esc(t.name)}</h3>
+          <p>${esc(t.title)}</p>
+          <p class="specs">${esc(t.specs)}</p>
+        </div>
+      </div>
+      <p class="match-result-why">${esc(audienceLabel(s.audience))} · ${esc(s.service)} · ${s.sessionType === 'in-person' ? 'In-person' : s.sessionType === 'either' ? 'Virtual or in-person' : 'Virtual'}</p>
+      <button type="button" class="btn" onclick="cycleSuggestedTherapist()">Show another therapist</button>
+    </div>`;
+  }
+  body.innerHTML = html;
+  body.classList.remove('slide-fwd', 'slide-back');
+  void body.offsetWidth;
+  body.classList.add(matchAnimDir === 'back' ? 'slide-back' : 'slide-fwd');
+  body.querySelectorAll('.match-opt').forEach(btn => {
+    btn.addEventListener('click', () => selectMatchOption(btn));
+  });
+}
+
+function selectMatchOption(btn) {
+  const field = btn.parentElement?.dataset.field;
+  if (!field || matchBusy) return;
+  matchState[field] = btn.dataset.value;
+  btn.parentElement.querySelectorAll('.match-opt').forEach(b => b.classList.toggle('selected', b === btn));
+  if (field === 'crisis' && matchState.crisis === 'yes') {
+    renderMatchQuiz();
+    return;
+  }
+  matchBusy = true;
+  setTimeout(() => {
+    matchBusy = false;
+    matchQuizNext();
+  }, 260);
+}
+
+function cycleSuggestedTherapist() {
+  matchSuggestIndex += 1;
+  matchAnimDir = 'fwd';
+  renderMatchQuiz();
+}
+
+function matchQuizBack() {
+  if (matchStep > 0) {
+    matchAnimDir = 'back';
+    matchStep -= 1;
+    renderMatchQuiz();
+  }
+}
+
+function matchQuizNext() {
+  if (matchStep === 5 && matchState.crisis === 'yes') {
+    closeMatchQuiz();
+    return;
+  }
+  if (matchStep >= MATCH_STEPS - 1) {
+    finishMatchQuiz();
+    return;
+  }
+  matchAnimDir = 'fwd';
+  matchStep += 1;
+  renderMatchQuiz();
+}
+
+function audienceLabel(v) {
+  return v === 'couples' ? 'Couples' : v === 'teen' ? 'Child / teen (parent request)' : 'Individual';
+}
+function prefLabel(v) {
+  return v === 'woman' ? 'Prefer a woman' : v === 'man' ? 'Prefer a man' : 'No preference';
+}
+function payerFromMatch(v) {
+  if (v === 'insurance') return 'insurance';
+  if (v === 'sliding') return 'other';
+  return 'self-pay';
+}
+
+function applyMatchToBooking() {
+  const sessionType = matchState.sessionType === 'in-person' ? 'in-person' : 'video';
+  const payer = payerFromMatch(matchState.payerType);
+  const serviceEl = document.getElementById('book-service');
+  const typeEl = document.getElementById('book-type');
+  const payerEl = document.querySelector('#booking-form [name="payerType"]');
+  const audEl = document.getElementById('book-audience');
+  const prefEl = document.getElementById('book-therapist-pref');
+  const slideEl = document.getElementById('book-sliding');
+  const nameEl = document.getElementById('book-therapist-name');
+  if (serviceEl) {
+    const match = [...serviceEl.options].find(o => o.textContent === matchState.service);
+    if (match) serviceEl.value = match.value;
+  }
+  if (typeEl) typeEl.value = sessionType;
+  if (payerEl) payerEl.value = payer;
+  if (audEl) audEl.value = matchState.audience;
+  if (prefEl) prefEl.value = matchState.therapistPref;
+  if (slideEl) slideEl.value = matchState.payerType === 'sliding' ? 'yes' : 'no';
+  if (nameEl) nameEl.value = matchState.preferredTherapist || '';
+  const nameInput = document.querySelector('#booking-form [name="name"]');
+  if (nameInput) {
+    const wrap = nameInput.closest('label');
+    if (wrap && wrap.firstChild) {
+      wrap.firstChild.textContent = matchState.audience === 'teen' ? 'Parent / guardian name' : 'Full name';
+    }
+  }
+  const box = document.getElementById('match-summary');
+  if (box) {
+    const sessionTxt = matchState.sessionType === 'either' ? 'Virtual or in-person' : (sessionType === 'in-person' ? 'In-person' : 'Virtual');
+    box.classList.remove('hidden');
+    box.innerHTML = `<strong>Your match preferences</strong>
+      <div class="match-chips">
+        <button type="button" class="match-chip" onclick="openMatchQuiz(${JSON.stringify(matchState.audience)})">${esc(audienceLabel(matchState.audience))}</button>
+        <button type="button" class="match-chip" onclick='openMatchQuiz(null,{service:${JSON.stringify(matchState.service)}})'>${esc(matchState.service)}</button>
+        <span class="match-chip static">${esc(sessionTxt)}</span>
+        ${matchState.preferredTherapist ? `<span class="match-chip static">${esc(matchState.preferredTherapist)}</span>` : ''}
+      </div>
+      <button type="button" class="btn btn-sm" onclick="openMatchQuiz()">Edit answers</button>`;
+  }
+}
+
+function finishMatchQuiz() {
+  matchCompleted = true;
+  if (!matchState.preferredTherapist) {
+    matchState.preferredTherapist = currentSuggestedTherapist().name;
+  }
+  closeMatchQuiz();
+  applyMatchToBooking();
+  scrollToBooking();
+  const panel = document.getElementById('booking-panel');
+  panel?.classList.add('match-flash');
+  setTimeout(() => panel?.classList.remove('match-flash'), 900);
+}
+
 function renderPublicSite() {
   const year = document.getElementById('pub-year');
   if (year) year.textContent = String(new Date().getFullYear());
 
   const list = document.getElementById('pub-therapist-list');
-  if (!list) return;
+  const listPage = document.getElementById('pub-therapist-list-page');
+  if (!list && !listPage) return;
+  const portraits = [
+    'images/therapist-1.jpg',
+    'images/therapist-2.jpg',
+    'images/therapist-3.jpg'
+  ];
+  const demos = CLINIC_THERAPISTS;
   const practitioners = (db.users || []).filter(u => u.role === 'practitioner');
-  if (!practitioners.length) {
-    list.innerHTML = `<article class="pub-therapist">
-      <div class="avatar-lg">MC</div>
-      <h3>MindCare Practitioner</h3>
-      <div class="title">Clinical therapist</div>
-      <div class="specs">Directory fills in once a practitioner account is set up.</div>
-      <button type="button" class="btn btn-sm" onclick="scrollToBooking()">Request appointment</button>
-    </article>`;
-    return;
+  const cards = practitioners.length
+    ? practitioners.map((u, i) => ({
+        name: u.name,
+        title: 'Clinical therapist',
+        specs: 'Anxiety · Mood · Life transitions',
+        img: portraits[i % portraits.length]
+      }))
+    : [];
+  // Keep a balanced 3-up directory so the public section doesn't look sparse
+  while (cards.length < 3) {
+    const d = demos[cards.length];
+    cards.push({ ...d, img: portraits[cards.length % portraits.length] });
   }
-  list.innerHTML = practitioners.map(u => `<article class="pub-therapist">
-    <div class="avatar-lg">${esc(initials(u.name))}</div>
-    <h3>${esc(u.name)}</h3>
-    <div class="title">Clinical therapist</div>
-    <div class="specs">Anxiety · Mood · Life transitions</div>
-    <button type="button" class="btn btn-sm" onclick="scrollToBooking()">Request appointment</button>
+  const therapistHtml = cards.slice(0, 6).map(t => `<article class="pub-therapist">
+    <div class="avatar-lg"><img src="${t.img}" alt="" width="88" height="88" loading="lazy"></div>
+    <h3>${esc(t.name)}</h3>
+    <div class="title">${esc(t.title)}</div>
+    <div class="specs">${esc(t.specs)}</div>
+    <button type="button" class="btn btn-sm btn-primary" onclick='matchWithTherapist(${JSON.stringify(t.name)})'>Match with ${esc(t.name.split(' ')[0])}</button>
   </article>`).join('');
+  if (list) list.innerHTML = therapistHtml;
+  if (listPage) listPage.innerHTML = therapistHtml;
 
   // Prefer tomorrow as default preferred date when empty
   const dateInput = document.querySelector('#booking-form [name="preferredDate"]');
@@ -1879,6 +2225,10 @@ function submitBookingRequest(e) {
     service: f.get('service'),
     sessionType: f.get('sessionType') || 'video',
     notes: (f.get('notes') || '').trim(),
+    matchAudience: f.get('matchAudience') || 'individual',
+    therapistPref: f.get('therapistPref') || 'any',
+    slidingScale: f.get('slidingScale') === 'yes',
+    preferredTherapist: (f.get('preferredTherapist') || '').trim(),
     status: 'new', // new | confirmed | declined
     patientId: null,
     appointmentId: null
@@ -1906,10 +2256,16 @@ function resetBookingForm() {
   if (!panel) return;
   panel.innerHTML = `
     <h3>Request an appointment</h3>
-    <p class="muted small">This saves a request on this device for the clinic team to review. It does <b>not</b> confirm a slot until staff accepts it.</p>
+    <p class="muted small">This saves a request on this device for the clinic team to review. It does <b>not</b> confirm a slot until staff accepts it.
+      <a href="#pub-match" onclick="openMatchQuiz();return false">Start with matching questions</a> if you haven’t yet.</p>
     <form id="booking-form" onsubmit="submitBookingRequest(event)">
+      <div id="match-summary" class="match-summary hidden"></div>
+      <input type="hidden" name="matchAudience" id="book-audience" value="individual">
+      <input type="hidden" name="therapistPref" id="book-therapist-pref" value="any">
+      <input type="hidden" name="slidingScale" id="book-sliding" value="no">
+      <input type="hidden" name="preferredTherapist" id="book-therapist-name" value="">
       <div class="form-row">
-        <label>Full name<input class="input" name="name" required autocomplete="name"></label>
+        <label id="book-name-label">Full name<input class="input" name="name" required autocomplete="name"></label>
         <label>Email<input class="input" type="email" name="email" required autocomplete="email"></label>
       </div>
       <div class="form-row">
@@ -1951,6 +2307,7 @@ function resetBookingForm() {
       <div class="auth-error" id="book-error"></div>
       <button class="btn btn-primary" type="submit">Submit request</button>
     </form>`;
+  if (matchCompleted) applyMatchToBooking();
   renderPublicSite();
 }
 
@@ -1991,6 +2348,7 @@ function renderRequests() {
           <span class="badge ${r.sessionType === 'in-person' ? 'badge-inperson' : 'badge-video'}">${r.sessionType === 'in-person' ? 'In-person' : 'Virtual'}</span></div>
         <div class="row-sub">${esc(fmtDate(r.preferredDate))} · ${esc(fmtTime(r.preferredTime))} · ${esc(r.service || '')}
           · ${esc(r.payerType)} · ${esc(r.email)}${r.phone ? ' · ' + esc(r.phone) : ''}</div>
+        ${r.matchAudience || r.therapistPref || r.preferredTherapist ? `<div class="row-sub">Match: ${esc(audienceLabel(r.matchAudience || 'individual'))} · ${esc(prefLabel(r.therapistPref || 'any'))}${r.preferredTherapist ? ' · Prefers ' + esc(r.preferredTherapist) : ''}${r.slidingScale ? ' · Sliding scale' : ''}</div>` : ''}
         ${r.notes ? `<div class="row-sub">${esc(r.notes)}</div>` : ''}
       </div>
       <div class="btn-row">
@@ -2018,7 +2376,10 @@ function findOrCreatePatientFromRequest(r) {
       dob: '',
       insurance: r.payerType === 'insurance' ? 'Insurance (from booking request)' : (r.payerType === 'self-pay' ? 'Self-pay' : ''),
       emergency: '',
-      notes: r.notes ? `Booking request note: ${r.notes}` : '',
+      notes: [
+        r.notes ? `Booking request note: ${r.notes}` : '',
+        r.matchAudience ? `Match: ${audienceLabel(r.matchAudience)}; therapist ${prefLabel(r.therapistPref || 'any')}${r.slidingScale ? '; sliding scale requested' : ''}` : ''
+      ].filter(Boolean).join('\n'),
       records: [],
       created: todayIso(),
       payerType: r.payerType
@@ -2093,3 +2454,42 @@ function renderAll() {
 
 renderAll();
 renderAuth();
+
+document.getElementById('match-quiz')?.addEventListener('click', (e) => {
+  if (e.target.id === 'match-quiz') closeMatchQuiz();
+});
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('match-quiz');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (e.key === 'Escape') {
+    closeMatchQuiz();
+    return;
+  }
+  if (e.key === 'ArrowRight' || e.key === 'Enter') {
+    if (e.target.closest('.match-opt')) return;
+    if (e.key === 'Enter' && e.target.closest('button')) return;
+    e.preventDefault();
+    matchQuizNext();
+    return;
+  }
+  if (e.key === 'ArrowLeft' && !e.target.closest('input, textarea, select')) {
+    e.preventDefault();
+    matchQuizBack();
+    return;
+  }
+  const num = Number(e.key);
+  if (num >= 1 && num <= 9) {
+    const opts = [...modal.querySelectorAll('.match-opt')];
+    if (opts[num - 1]) {
+      e.preventDefault();
+      selectMatchOption(opts[num - 1]);
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest?.('.pub-service');
+  if (!card || e.target !== card) return;
+  e.preventDefault();
+  card.click();
+});

@@ -6,7 +6,7 @@
 <title>MindCare — Compassion. Clarity. Care.</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23003E7E%22/><text x=%2250%22 y=%2270%22 font-size=%2254%22 font-family=%22sans-serif%22 font-weight=%22700%22 fill=%22%23FFB81C%22 text-anchor=%22middle%22>M</text></svg>">
 <!-- Bump ?v= on every deploy so browsers never mix cached old assets with a new page -->
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
 
@@ -16,8 +16,12 @@
 <!-- Staff/practitioner and patient sign-in both live at dashboard.html (route: /dashboard).
      This page has no auth gate of its own — it's the public marketing + booking site. -->
 <div id="public-site" class="public-site">
-  <header class="pub-header">
-    <div class="brand">
+  <div class="mc-topbar">
+    <span>Talk with a therapist · We’ll confirm a time within 1–2 business days</span>
+    <button type="button" class="btn btn-primary btn-sm" onclick="openMatchQuiz()">Talk today</button>
+  </div>
+  <header class="pub-header mc-header">
+    <a class="brand" href="#" onclick="showMcView('home');return false">
       <div class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" rx="10" fill="#003E7E"/><path d="M8 22c2-6 7-9 11-8 1-3 5-5 8-3 2 1 3 4 2 7 3 1 5 4 5 7-4 4-10 5-14 3-3 2-8 1-12-2 0-2 0-3 0-4z" fill="#FFE68C"/><path d="M10 24c4 5 11 7 18 4 2 2 1 4-1 5-7 2-14 0-19-5 1-2 1-3 2-4z" fill="#4279B0"/><circle cx="24" cy="11" r="2.2" fill="#FFB81C"/><path d="M22 8c2-3 5-2 5 1" stroke="#FFB81C" stroke-width="1.6" stroke-linecap="round"/></svg>
       </div>
@@ -25,65 +29,276 @@
         <div class="brand-name">Mind<span class="care">Care</span></div>
         <div class="brand-sub">Compassion. Clarity. Care.</div>
       </div>
-    </div>
-    <nav class="pub-nav" id="pub-nav" aria-label="Website">
-      <a href="#pub-services" onclick="closePubNav()">Services</a>
-      <a href="#pub-therapists" onclick="closePubNav()">Therapists</a>
-      <a href="#pub-about" onclick="closePubNav()">About</a>
-      <a href="#pub-faq" onclick="closePubNav()">FAQs</a>
-      <a href="#pub-contact" onclick="closePubNav()">Contact</a>
+    </a>
+    <nav class="mc-nav" id="pub-nav" aria-label="Website">
+      <div class="mc-nav-item">
+        <button type="button" aria-expanded="false" aria-haspopup="true" onclick="toggleMcMenu('mega-groups', this)">Support Groups</button>
+        <div class="mc-mega" id="mega-groups">
+          <div>
+            <h4>By concern</h4>
+            <a href="#groups" onclick="showMcView('groups');return false">All support groups</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Anxiety</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Depression &amp; mood</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Grief</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Trauma &amp; PTSD</a>
+            <a href="#groups" onclick="showMcView('groups');return false">ADHD</a>
+            <a href="#groups" onclick="showMcView('groups');return false">OCD</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Burnout</a>
+          </div>
+          <div>
+            <h4>By audience</h4>
+            <a href="#groups" onclick="showMcView('groups');return false">Women’s circle</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Couples workshop</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Caregivers</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Divorce &amp; separation</a>
+            <a href="#groups" onclick="showMcView('groups');return false">Relationships</a>
+          </div>
+          <div class="mc-mega-cta">
+            <p>Not sure which group?</p>
+            <button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Get a recommendation</button>
+            <a href="#assessments" onclick="showMcView('assessments');return false">Or take a short test →</a>
+          </div>
+        </div>
+      </div>
+      <div class="mc-nav-item">
+        <button type="button" aria-expanded="false" aria-haspopup="true" onclick="toggleMcMenu('mega-therapy', this)">Therapy</button>
+        <div class="mc-mega" id="mega-therapy">
+          <div>
+            <h4>1-on-1 care</h4>
+            <a href="#therapy" onclick="showMcView('therapy');return false">All therapists</a>
+            <a href="#therapy" onclick="showMcView('therapy');return false">Anxiety</a>
+            <a href="#therapy" onclick="showMcView('therapy');return false">Trauma</a>
+            <a href="#therapy" onclick="showMcView('therapy');return false">Couples</a>
+            <a href="#therapy" onclick="showMcView('therapy');return false">Teens / family</a>
+            <a href="#pub-care">Virtual sessions</a>
+            <a href="#pub-care">In-person sessions</a>
+          </div>
+          <div>
+            <h4>Approaches</h4>
+            <a href="#therapy" onclick="showMcView('therapy');return false">CBT</a>
+            <a href="#therapy" onclick="showMcView('therapy');return false">Trauma-informed</a>
+            <a href="#guides" onclick="showMcView('guides');return false">What to expect</a>
+          </div>
+          <div class="mc-mega-cta">
+            <p>Matched in-clinic, not a national marketplace.</p>
+            <button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Get matched</button>
+          </div>
+        </div>
+      </div>
+      <div class="mc-nav-item">
+        <button type="button" aria-expanded="false" aria-haspopup="true" onclick="toggleMcMenu('mega-guides', this)">Guides</button>
+        <div class="mc-mega" id="mega-guides">
+          <div>
+            <h4>Learn about</h4>
+            <a href="#guides" onclick="showMcView('guides');return false">Anxiety</a>
+            <a href="#guides" onclick="showMcView('guides');return false">Depression</a>
+            <a href="#guides" onclick="showMcView('guides');return false">ADHD</a>
+            <a href="#guides" onclick="showMcView('guides');return false">PTSD</a>
+            <a href="#guides" onclick="showMcView('guides');return false">Grief</a>
+            <a href="#guides" onclick="showMcView('guides');return false">OCD</a>
+          </div>
+        </div>
+      </div>
+      <a class="mc-nav-link" data-view="resources" href="#resources" onclick="showMcView('resources');return false">Free resources <span class="mc-badge-new">New</span></a>
+      <div class="mc-nav-item">
+        <button type="button" aria-expanded="false" aria-haspopup="true" onclick="toggleMcMenu('mega-tests', this)">Take a test</button>
+        <div class="mc-mega" id="mega-tests">
+          <div>
+            <h4>Mental health</h4>
+            <a href="#assessments" onclick="openAssessment('anxiety');return false">Anxiety check-in</a>
+            <a href="#assessments" onclick="openAssessment('mood');return false">Mood &amp; energy</a>
+            <a href="#assessments" onclick="openAssessment('trauma');return false">After something overwhelming</a>
+            <a href="#assessments" onclick="openAssessment('regulation');return false">Emotional regulation</a>
+          </div>
+          <div>
+            <h4>Life &amp; relationships</h4>
+            <a href="#assessments" onclick="openAssessment('relationship');return false">Relationship quality</a>
+            <a href="#assessments" onclick="openAssessment('burnout');return false">Work burnout</a>
+            <a href="#assessments" onclick="openAssessment('grief');return false">Grief &amp; loss</a>
+            <a href="#assessments" onclick="openAssessment('parenting');return false">Parenting stress</a>
+            <a href="#assessments" onclick="showMcView('assessments');return false">View all tests →</a>
+          </div>
+        </div>
+      </div>
+      <a class="mc-nav-link" data-view="community" href="#community" onclick="showMcView('community');return false">Community</a>
+      <a class="mc-nav-link" data-view="partners" href="#partners" onclick="showMcView('partners');return false">Partnerships</a>
     </nav>
     <div class="pub-header-actions">
       <button type="button" class="pub-nav-toggle" onclick="togglePubNav()" aria-haspopup="true" aria-expanded="false" aria-controls="pub-nav" aria-label="Menu">☰</button>
-      <a class="btn" href="dashboard.html?login=patient">Patient Login</a>
-      <button type="button" class="btn btn-primary" onclick="scrollToBooking()">Book an Appointment</button>
+      <button type="button" class="btn" onclick="toggleMcSearch(true)">Search</button>
+      <a class="btn" href="dashboard.html?login=patient">Log in</a>
+      <button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Find support</button>
     </div>
   </header>
+  <div id="mc-search-panel" class="mc-search-panel hidden">
+    <input id="mc-search-input" class="input" type="search" placeholder="Search groups, tests, therapists…" autocomplete="off">
+    <div id="mc-search-results"></div>
+    <button type="button" class="btn btn-sm" onclick="closeMcSearch()">Close</button>
+  </div>
+
+  <div class="mc-view" data-view="home" id="view-home">
 
   <section class="pub-hero">
-    <div class="pub-hero-copy">
-      <p class="pub-kicker">Welcome to MindCare</p>
-      <h1>A calmer mind starts with the right support.</h1>
-      <p class="pub-hero-lead">Personalized therapy with compassionate professionals who listen, understand, and work with you.</p>
-      <div class="pub-hero-ctas">
-        <button type="button" class="btn btn-primary" onclick="scrollToBooking()">Book an Appointment</button>
-        <a class="btn" href="#pub-therapists">Meet Our Therapists</a>
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="pub-hero-inner">
+      <div class="pub-hero-copy">
+        <p class="pub-kicker">MindCare clinic · USA</p>
+        <h1>A calmer mind starts with the <span class="hero-rotator" aria-live="polite"><span id="hero-rotate">right support</span></span>.</h1>
+        <p class="pub-hero-lead">Therapy, small groups, and honest self-check-ins — without a national waitlist or a cold intake form.</p>
+        <div class="hero-pills" role="list">
+          <button type="button" class="hero-pill" onclick="openMatchQuiz('individual')">For myself</button>
+          <button type="button" class="hero-pill" onclick="openMatchQuiz('couples')">For us</button>
+          <button type="button" class="hero-pill" onclick="openMatchQuiz('teen')">For my teen</button>
+          <button type="button" class="hero-pill" onclick="openAssessment('anxiety')">Take a 2-min test</button>
+        </div>
+        <div class="pub-hero-ctas">
+          <button type="button" class="btn btn-primary btn-lg" onclick="openMatchQuiz()">Find support →</button>
+          <a class="btn btn-lg" href="tel:+15550102040">Call us</a>
+        </div>
+        <div class="pub-trust">
+          <span>In-person rooms</span>
+          <span>Private video</span>
+          <span>Confirmed in 1–2 days</span>
+        </div>
       </div>
-      <div class="pub-trust">
-        <span>✓ In-person care</span>
-        <span>✓ Virtual sessions</span>
-        <span>✓ Private &amp; respectful care</span>
-      </div>
-    </div>
-    <div class="pub-hero-visual" aria-hidden="true">
-      <div class="pub-hero-caption">
-        <strong>A calm space to begin</strong>
-        <span>In-person rooms and private virtual sessions — choose what fits your life.</span>
+      <div class="pub-hero-visual">
+        <div class="hero-shape" aria-hidden="true"></div>
+        <img class="hero-photo" src="images/hero-room.jpg" width="900" height="720" alt="Calm therapy space with a comfortable armchair by a sunny window">
+        <div class="hero-orbit" aria-hidden="true">
+          <img class="hero-face f1" src="images/therapist-1.jpg" alt="">
+          <img class="hero-face f2" src="images/therapist-2.jpg" alt="">
+          <img class="hero-face f3" src="images/therapist-3.jpg" alt="">
+        </div>
+        <aside class="hero-float hf1">
+          <strong>Next step</strong>
+          <span>Match in a few questions</span>
+        </aside>
+        <aside class="hero-float hf2">
+          <strong>12 groups</strong>
+          <span>Therapist-led, small rooms</span>
+        </aside>
+        <aside class="hero-float hf3">
+          <strong>Virtual or in-person</strong>
+          <span>Same clinicians, your format</span>
+        </aside>
       </div>
     </div>
   </section>
 
   <div class="pub-values">
-    <div class="pub-value"><h3>Personalized Care</h3><p>Therapy shaped around your unique needs.</p></div>
-    <div class="pub-value"><h3>Flexible Sessions</h3><p>Choose virtual or in-person care.</p></div>
-    <div class="pub-value"><h3>Compassionate Professionals</h3><p>A team with different areas of expertise.</p></div>
-    <div class="pub-value"><h3>Private &amp; Respectful</h3><p>Your information and experience matter.</p></div>
+    <div class="pub-values-inner">
+      <div class="pub-value"><h3>Personalized Care</h3><p>Therapy shaped around your unique needs.</p></div>
+      <div class="pub-value"><h3>Flexible Sessions</h3><p>Choose virtual or in-person care.</p></div>
+      <div class="pub-value"><h3>Compassionate Professionals</h3><p>A team with different areas of expertise.</p></div>
+      <div class="pub-value"><h3>Private &amp; Respectful</h3><p>Your information and experience matter.</p></div>
+    </div>
   </div>
 
-  <section class="pub-section" id="pub-services">
+  <section class="mc-stats-section" aria-label="Clinic at a glance">
+    <div class="mc-stats-head">
+      <p class="pub-kicker">At a glance</p>
+      <div class="mc-slide-nav">
+        <button type="button" class="mc-slide-btn" id="mc-stats-prev" onclick="slideMcRow('mc-stats',-1)" aria-label="Previous cards">‹</button>
+        <button type="button" class="mc-slide-btn" id="mc-stats-next" onclick="slideMcRow('mc-stats',1)" aria-label="Next cards">›</button>
+      </div>
+    </div>
+    <div class="mc-stats-viewport is-start">
+      <div class="mc-stats" id="mc-stats" tabindex="0">
+        <article><strong>12</strong><h3>Therapist-led groups</h3><p>Anxiety, grief, trauma, ADHD, relationships, burnout, and more.</p></article>
+        <article><strong>1–2 days</strong><h3>Typical confirm time</h3><p>Requests are reviewed by our clinic team — not auto-booked.</p></article>
+        <article><strong>Virtual + in-person</strong><h3>How you can meet</h3><p>Same clinicians, two formats. Pick what fits this season.</p></article>
+        <article><strong>12</strong><h3>Self-assessments</h3><p>Reflection tools to name what hurts — not a diagnosis.</p></article>
+        <article><strong>English</strong><h3>Care in plain language</h3><p>USA clinic hours. Sliding scale available when we have room.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="pub-section">
     <div class="pub-section-head">
+      <div>
+        <h2>Unsure what you’re going through?</h2>
+        <p class="section-lead">Take a short self-assessment, then we’ll suggest a group or a 1-on-1 match.</p>
+      </div>
+      <a class="pub-section-link" href="#assessments" onclick="showMcView('assessments');return false">View all tests →</a>
+    </div>
+    <div class="mc-row" id="mc-home-assess"></div>
+  </section>
+
+  <section class="pub-section mc-offer">
+    <h2>Our key offerings</h2>
+    <div class="mc-offer-grid">
+      <article>
+        <h3>Join a support group</h3>
+        <p>Small, therapist-facilitated groups. Weekly, time-limited, and built around one life stress.</p>
+        <a href="#groups" onclick="showMcView('groups');return false">Browse groups →</a>
+      </article>
+      <article>
+        <h3>Book 1-on-1 therapy</h3>
+        <p>Individual, couples, or family. Virtual or in the office. Matching stays inside this clinic.</p>
+        <a href="#therapy" onclick="showMcView('therapy');return false">Browse therapists →</a>
+      </article>
+      <article>
+        <h3>Talk with a peer-style check-in</h3>
+        <p>Community circles for people who want company, not a full course of treatment.</p>
+        <a href="#community" onclick="showMcView('community');return false">See community →</a>
+      </article>
+    </div>
+  </section>
+
+  <section class="pub-section">
+    <div class="pub-section-head">
+      <div>
+        <h2>Upcoming support groups</h2>
+        <p class="section-lead">Join a waitlist. Staff confirm a seat — groups are not drop-in.</p>
+      </div>
+      <a class="pub-section-link" href="#groups" onclick="showMcView('groups');return false">View all groups →</a>
+    </div>
+    <div class="mc-grid" id="mc-home-groups"></div>
+  </section>
+
+  <section class="pub-section" id="pub-match">
+    <div class="pub-section-head pub-section-head-center">
+      <div>
+        <h2>Who is this for?</h2>
+        <p class="section-lead">Answer a few questions and we’ll help match you with a therapist at this clinic. Then you request a time — our team confirms within 1–2 business days.</p>
+      </div>
+    </div>
+    <div class="pub-audiences">
+      <button type="button" class="pub-audience" onclick="openMatchQuiz('individual')">
+        <div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="3"/><path d="M5 20c1.2-3.5 3.8-5 7-5s5.8 1.5 7 5"/></svg></div>
+        <h3>For myself</h3>
+        <p>Individual therapy for anxiety, mood, trauma, and everyday pressure.</p>
+        <span>Get matched →</span>
+      </button>
+      <button type="button" class="pub-audience" onclick="openMatchQuiz('couples')">
+        <div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8.5" cy="8" r="2.5"/><circle cx="15.5" cy="8.5" r="2.2"/><path d="M3.5 19.5c.8-3 2.8-4.5 5-4.5s4 1.5 4.8 4.2"/><path d="M13 19.5c.4-1.8 1.6-3 3.2-3s2.5 1 2.9 2.6"/></svg></div>
+        <h3>For me and my partner</h3>
+        <p>Couples work on communication, conflict, and connection.</p>
+        <span>Get matched →</span>
+      </button>
+      <button type="button" class="pub-audience" onclick="openMatchQuiz('teen')">
+        <div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="7.5" r="2.6"/><path d="M6 20c1-3.8 3.2-5.5 6-5.5s5 1.7 6 5.5"/><path d="M16.5 5.5c1.2-1 2.8-.8 3.5.6"/></svg></div>
+        <h3>For my child / teen</h3>
+        <p>A parent or guardian starts the request. We confirm fit and next steps.</p>
+        <span>Get matched →</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="pub-section" id="pub-services">
+    <div class="pub-section-head pub-section-head-center">
       <div>
         <h2>How can we support you?</h2>
         <p class="section-lead">Explore the areas we commonly help with. Booking starts a request — our team confirms the time with you.</p>
       </div>
     </div>
     <div class="pub-services">
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Anxiety &amp; Stress</h3><p>Tools and support for worry, overwhelm, and everyday pressure.</p><a href="#pub-book" onclick="prefillService('Anxiety &amp; Stress')">Learn more →</a></article>
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Depression &amp; Mood</h3><p>Steady, respectful care when mood feels heavy or stuck.</p><a href="#pub-book" onclick="prefillService('Depression &amp; Mood')">Learn more →</a></article>
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Relationships</h3><p>Communication, conflict, and connection — individually or together.</p><a href="#pub-book" onclick="prefillService('Relationships')">Learn more →</a></article>
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Trauma &amp; Recovery</h3><p>Pace-sensitive support after difficult or overwhelming experiences.</p><a href="#pub-book" onclick="prefillService('Trauma &amp; Recovery')">Learn more →</a></article>
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Life Transitions</h3><p>Change, grief, work shifts, and new chapters.</p><a href="#pub-book" onclick="prefillService('Life Transitions')">Learn more →</a></article>
-      <article class="pub-service"><div class="svc-ico">◎</div><h3>Personal Growth</h3><p>Clarity, confidence, and habits that support the life you want.</p><a href="#pub-book" onclick="prefillService('Personal Growth')">Learn more →</a></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Anxiety & Stress'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3c-2 2.5-3 4.5-3 7a3 3 0 006 0c0-2.5-1-4.5-3-7z"/><path d="M8 14c-1.5 1-2.5 2.5-2.5 4.2A2.5 2.5 0 008 20.5h8a2.5 2.5 0 002.5-2.3c0-1.7-1-3.2-2.5-4.2"/><path d="M9.5 17.5h5"/></svg></div><h3>Anxiety &amp; Stress</h3><p>Tools and support for worry, overwhelm, and everyday pressure.</p><span class="pub-card-cta">Match me for this →</span></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Depression & Mood'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 14c2-4 5-6 8-6s6 2 8 6"/><circle cx="12" cy="8" r="2.5"/><path d="M8 18h8"/></svg></div><h3>Depression &amp; Mood</h3><p>Steady, respectful care when mood feels heavy or stuck.</p><span class="pub-card-cta">Match me for this →</span></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Relationships'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="2.5"/><circle cx="16" cy="9" r="2"/><path d="M4.5 18c.8-3 2.8-4.5 4.5-4.5s3.7 1.5 4.5 4.5"/><path d="M13 18c.4-1.8 1.5-3 3-3s2.4 1 2.8 2.5"/></svg></div><h3>Relationships</h3><p>Communication, conflict, and connection — individually or together.</p><span class="pub-card-cta">Match me for this →</span></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Trauma & Recovery'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-4.4-7-10a4 4 0 017-2.5A4 4 0 0119 11c0 5.6-7 10-7 10z"/></svg></div><h3>Trauma &amp; Recovery</h3><p>Pace-sensitive support after difficult or overwhelming experiences.</p><span class="pub-card-cta">Match me for this →</span></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Life Transitions'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 18V8l4 3 4-5 4 4 4-2v10"/><path d="M4 18h16"/></svg></div><h3>Life Transitions</h3><p>Change, grief, work shifts, and new chapters.</p><span class="pub-card-cta">Match me for this →</span></article>
+      <article class="pub-service" tabindex="0" onclick="openMatchQuiz(null,{service:'Personal Growth'})"><div class="svc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.8 4.8L19 9.5l-4 3.2 1.2 5.3L12 15.8 7.8 18l1.2-5.3-4-3.2 5.2-1.7L12 3z"/></svg></div><h3>Personal Growth</h3><p>Clarity, confidence, and habits that support the life you want.</p><span class="pub-card-cta">Match me for this →</span></article>
     </div>
   </section>
 
@@ -93,6 +308,7 @@
         <h2>Meet our therapists</h2>
         <p class="section-lead">Directory reflects practitioners set up in this clinic’s MindCare account.</p>
       </div>
+      <a class="pub-section-link" href="#pub-book" onclick="scrollToBooking();return false">View all therapists →</a>
     </div>
     <div class="pub-therapists" id="pub-therapist-list"></div>
   </section>
@@ -101,11 +317,11 @@
     <div class="pub-process-inner">
       <h2>Starting therapy can be simple</h2>
       <div class="pub-steps">
-        <div class="pub-step"><div class="n">STEP 1</div><h3>Find your therapist</h3></div>
-        <div class="pub-step"><div class="n">STEP 2</div><h3>Choose virtual or in-person</h3></div>
-        <div class="pub-step"><div class="n">STEP 3</div><h3>Pick a convenient time</h3></div>
-        <div class="pub-step"><div class="n">STEP 4</div><h3>Take the first step</h3></div>
-        <button type="button" class="btn btn-primary" onclick="scrollToBooking()">Book an Appointment</button>
+        <div class="pub-step"><div class="n">STEP 1</div><h3>Answer a few questions</h3></div>
+        <div class="pub-step"><div class="n">STEP 2</div><h3>We’ll match you in-clinic</h3></div>
+        <div class="pub-step"><div class="n">STEP 3</div><h3>Request a convenient time</h3></div>
+        <div class="pub-step"><div class="n">STEP 4</div><h3>We confirm in 1–2 days</h3></div>
+        <button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Get matched</button>
       </div>
     </div>
   </section>
@@ -124,33 +340,63 @@
     </div>
   </section>
 
-  <section class="pub-section">
-    <div class="pub-section-head"><div><h2>Care that fits your life</h2></div></div>
+  <section class="pub-section" id="pub-care">
+    <div class="pub-section-head pub-section-head-center"><div><h2>Care that fits your life</h2></div></div>
     <div class="pub-care">
-      <article class="pub-care-card inperson"><div class="pub-care-media"></div><div class="body"><h3>In-Person Care</h3><p>A quiet office setting when being in the room helps you settle.</p><a href="#pub-book" onclick="prefillType('in-person')">Learn more →</a></div></article>
-      <article class="pub-care-card virtual"><div class="pub-care-media"></div><div class="body"><h3>Virtual Care</h3><p>Secure video sessions from home when travel isn’t realistic.</p><a href="#pub-book" onclick="prefillType('video')">Learn more →</a></div></article>
+      <article class="pub-care-card inperson">
+        <div class="body">
+          <h3>In-Person Care</h3>
+          <p>A quiet office setting when being in the room helps you settle.</p>
+          <a href="#pub-book" onclick="prefillType('in-person')">Learn more →</a>
+        </div>
+        <div class="pub-care-media">
+          <img src="images/care-inperson.jpg" width="640" height="420" alt="Bright modern therapy office for in-person sessions" loading="lazy">
+        </div>
+      </article>
+      <article class="pub-care-card virtual">
+        <div class="body">
+          <h3>Virtual Care</h3>
+          <p>Secure video sessions from home when travel isn’t realistic.</p>
+          <a href="#pub-book" onclick="prefillType('video')">Learn more →</a>
+        </div>
+        <div class="pub-care-media">
+          <img src="images/care-virtual.jpg" width="640" height="420" alt="Laptop ready for a private virtual therapy session" loading="lazy">
+        </div>
+      </article>
     </div>
   </section>
 
   <section class="pub-section" id="pub-faq">
-    <div class="pub-section-head"><div><h2>Frequently asked questions</h2></div></div>
+    <div class="pub-section-head pub-section-head-center"><div><h2>Frequently asked questions</h2></div></div>
     <div class="pub-faq">
       <details open><summary>What happens during my first appointment?</summary><p>We focus on what brought you in, what you’ve already tried, and what “better” would look like for you. There’s no need to have a perfect story ready.</p></details>
       <details><summary>Do you accept insurance?</summary><p>You can note Self-pay, Insurance, or Other when you request an appointment. Our team will confirm coverage details when reviewing your request.</p></details>
       <details><summary>Can I meet virtually?</summary><p>Yes. Choose Virtual when you book a request. After confirmation you’ll receive join details for your session.</p></details>
       <details><summary>How do booking requests work?</summary><p>Online booking creates a <b>request</b>, not a confirmed appointment. Our clinic team reviews it and confirms or suggests another time — so the schedule stays accurate.</p></details>
+      <details><summary>How does matching work?</summary><p>You answer a short questionnaire about who the care is for, what you want help with, and virtual vs in-person. Our team uses that to suggest a therapist at this clinic. You can still request a different therapist after you start.</p></details>
+      <details><summary>Is MindCare for a crisis or emergency?</summary><p>No. If you or someone else is in immediate danger, call 911. In the U.S. you can also call or text 988 (Suicide &amp; Crisis Lifeline). MindCare is for scheduled therapy, not urgent crisis care.</p></details>
     </div>
   </section>
 
+  <aside class="pub-crisis" role="note">
+    <strong>If this is a crisis:</strong> MindCare cannot provide emergency care. Call 911 or 988 (U.S.) for immediate help.
+  </aside>
+
   <section class="pub-cta" id="pub-book">
     <h2>Ready to take the first step?</h2>
-    <p>You don’t have to figure everything out today. Send a request and we’ll follow up.</p>
+    <p>Get matched, then send a request. We’ll follow up within 1–2 business days.</p>
     <div class="pub-book" id="booking-panel">
       <h3>Request an appointment</h3>
-      <p class="muted small">This saves a request on this device for the clinic team to review. It does <b>not</b> confirm a slot until staff accepts it.</p>
+      <p class="muted small">This saves a request on this device for the clinic team to review. It does <b>not</b> confirm a slot until staff accepts it.
+        <a href="#pub-match" onclick="openMatchQuiz();return false">Start with matching questions</a> if you haven’t yet.</p>
       <form id="booking-form" onsubmit="submitBookingRequest(event)">
+        <div id="match-summary" class="match-summary hidden"></div>
+        <input type="hidden" name="matchAudience" id="book-audience" value="individual">
+        <input type="hidden" name="therapistPref" id="book-therapist-pref" value="any">
+        <input type="hidden" name="slidingScale" id="book-sliding" value="no">
+        <input type="hidden" name="preferredTherapist" id="book-therapist-name" value="">
         <div class="form-row">
-          <label>Full name<input class="input" name="name" required autocomplete="name"></label>
+          <label id="book-name-label">Full name<input class="input" name="name" required autocomplete="name"></label>
           <label>Email<input class="input" type="email" name="email" required autocomplete="email"></label>
         </div>
         <div class="form-row">
@@ -218,7 +464,7 @@
       </div>
       <div>
         <h4>Patients</h4>
-        <a href="#pub-book" onclick="scrollToBooking();return false">Book Appointment</a>
+        <a href="#pub-match" onclick="openMatchQuiz();return false">Get matched</a>
         <a href="dashboard.html?login=patient">Patient Login</a>
       </div>
       <div>
@@ -237,10 +483,106 @@
     </div>
     <div class="pub-footer-bottom">© <span id="pub-year">2026</span> MindCare. All rights reserved. Not a certified EHR — organizer for a single clinic.</div>
   </footer>
+  </div><!-- /view-home -->
+
+  <div class="mc-view hidden" data-view="groups">
+    <section class="pub-section">
+      <div class="pub-section-head"><div><h2>Support groups</h2><p class="section-lead">Therapist-led, small, and specific. Request a seat — we confirm availability.</p></div></div>
+      <div class="mc-grid" id="mc-all-groups"></div>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="therapy">
+    <section class="pub-section">
+      <div class="pub-section-head"><div>
+        <h2>1-on-1 therapy</h2>
+        <p class="section-lead">Choose a clinician or get matched. Same clinic, virtual or in-person.</p>
+      </div>
+      <button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Get matched</button></div>
+      <div class="pub-therapists" id="pub-therapist-list-page"></div>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="assessments">
+    <section class="pub-section">
+      <div class="pub-section-head"><div>
+        <h2>Tests &amp; self-assessments</h2>
+        <p class="section-lead">A few minutes to name what’s hard. These are reflection tools, not diagnoses or court documents.</p>
+      </div></div>
+      <div id="mc-all-assess"></div>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="resources">
+    <section class="pub-section">
+      <h2>Free resources</h2>
+      <p class="section-lead">Short reads you can use before your first session.</p>
+      <div class="mc-grid">
+        <article class="mc-card"><h3>What to expect in session one</h3><p>You don’t need a perfect story. We start with what brought you in.</p></article>
+        <article class="mc-card"><h3>Virtual therapy basics</h3><p>Private space, headphones, and a backup phone number.</p></article>
+        <article class="mc-card"><h3>Skills for a hard week</h3><p>Grounding, sleep, and how to ride a spike without making it worse.</p></article>
+        <article class="mc-card"><h3>For parents of teens</h3><p>How we involve caregivers without taking over the teen’s room.</p></article>
+      </div>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="community">
+    <section class="pub-section">
+      <h2>Community check-ins</h2>
+      <p class="section-lead">Therapist-hosted sharing circles — not a substitute for crisis care or 1-on-1 therapy.</p>
+      <article class="mc-card"><h3>Weekly sharing circle</h3><p>45 minutes, drop-in waitlist, capped at 10 people.</p><button type="button" class="btn btn-primary" onclick="openMatchQuiz()">Request a seat</button></article>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="partners">
+    <section class="pub-section">
+      <h2>Partnerships</h2>
+      <p class="section-lead">Employer / EAP and community partners. We are a single clinic, not a nationwide network.</p>
+      <p>Email <a href="mailto:hello@mindcare.example">hello@mindcare.example</a> to talk about covered sessions for your team.</p>
+    </section>
+  </div>
+  <div class="mc-view hidden" data-view="guides">
+    <section class="pub-section">
+      <h2>Guides</h2>
+      <p class="section-lead">Plain-language explainers. Not a diagnosis — a starting map.</p>
+      <div class="mc-grid">
+        <article class="mc-card"><h3>Anxiety</h3><p>When worry stops being useful and starts running the day.</p></article>
+        <article class="mc-card"><h3>Depression</h3><p>Low mood, lost interest, and why “try harder” usually fails.</p></article>
+        <article class="mc-card"><h3>ADHD</h3><p>Attention, time, and shame — and what therapy can (and can’t) do.</p></article>
+        <article class="mc-card"><h3>PTSD</h3><p>The nervous system after threat, and why pacing matters.</p></article>
+        <article class="mc-card"><h3>Grief</h3><p>There is no timeline. There is support.</p></article>
+        <article class="mc-card"><h3>OCD</h3><p>Intrusive thoughts vs. who you are. ERP-informed care.</p></article>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="match-quiz" class="match-quiz hidden" role="dialog" aria-modal="true" aria-labelledby="match-quiz-title">
+  <div class="match-quiz-card">
+    <button type="button" class="match-quiz-close" onclick="closeMatchQuiz()" aria-label="Close">×</button>
+    <p class="pub-kicker" id="match-quiz-kicker">Get matched</p>
+    <h2 id="match-quiz-title">A few questions to match you</h2>
+    <div class="match-progress" aria-hidden="true"><span id="match-progress-bar"></span></div>
+    <div class="match-dots" id="match-dots" role="tablist" aria-label="Quiz steps"></div>
+    <p class="match-step-label" id="match-step-label">Question 1 of 6</p>
+    <div id="match-quiz-body" class="match-quiz-body"></div>
+    <div class="match-quiz-nav">
+      <button type="button" class="btn" id="match-back" onclick="matchQuizBack()">Back</button>
+      <button type="button" class="btn btn-primary" id="match-next" onclick="matchQuizNext()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="assess-quiz" class="match-quiz hidden" role="dialog" aria-modal="true" aria-labelledby="assess-title">
+  <div class="match-quiz-card">
+    <button type="button" class="match-quiz-close" onclick="closeAssessment()" aria-label="Close">×</button>
+    <p class="pub-kicker">Self-assessment</p>
+    <h2 id="assess-title">Check-in</h2>
+    <p id="assess-blurb" class="muted small"></p>
+    <div class="match-progress" aria-hidden="true"><span id="assess-bar"></span></div>
+    <div id="assess-body" class="match-quiz-body"></div>
+    <div class="match-quiz-nav" id="assess-nav"></div>
+  </div>
 </div>
 
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=18"></script>
+<script src="site-catalog.js?v=21"></script>
 </body>
 </html>
