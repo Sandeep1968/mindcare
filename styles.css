@@ -63,7 +63,11 @@ body {
   height: 100vh;
   overflow-y: auto;
 }
-.brand { display: flex; gap: 10px; align-items: center; padding: 20px 18px 14px; }
+.brand { display: flex; gap: 10px; align-items: center; padding: 16px 14px 12px; }
+.brand-logo {
+  display: block; height: 48px; width: auto; max-width: 216px;
+  object-fit: contain;
+}
 .brand-mark {
   width: 40px; height: 40px; border-radius: 10px;
   background: var(--accent-2); color: #fff;
@@ -339,10 +343,8 @@ label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font
   width: 100%; max-width: 400px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
 }
-.auth-card .brand { padding: 0 0 16px; }
-.auth-card .brand-name { color: var(--accent-2); }
-.auth-card .brand-name .care { color: var(--accent-deep); }
-.auth-card .brand-sub { color: var(--ink-soft); opacity: 1; }
+.auth-card .brand { padding: 0 0 16px; justify-content: center; }
+.auth-card .brand-logo { height: 62px; max-width: 280px; }
 .auth-card h2 { font-size: 15px; }
 .auth-back {
   background: none; border: none; color: var(--ink-soft); font-size: 13px;
@@ -448,6 +450,7 @@ label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font
 .report-sheet { padding: 28px 34px; }
 .report-header { display: flex; justify-content: space-between; border-bottom: 3px solid var(--accent); padding-bottom: 14px; margin-bottom: 18px; }
 .report-clinic { font-weight: 700; font-size: 18px; color: var(--accent); }
+.report-header .brand-logo { height: 46px; width: auto; max-width: 200px; object-fit: contain; display: block; margin-bottom: 4px; }
 .report-section { margin-bottom: 18px; }
 .report-section h3 {
   font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
@@ -609,6 +612,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   grid-template-columns: none; position: sticky;
 }
 .mc-header .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+.mc-header .brand-logo { height: 52px; max-width: 230px; }
 .mc-nav { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; justify-content: center; flex: 1; }
 .mc-nav-link, .mc-nav-item > button {
   background: none; border: 0; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--accent-2);
@@ -938,9 +942,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
   max-width: 1180px; margin: 0 auto 28px;
   display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 20px;
 }
-.pub-footer .brand-name { color: #fff; }
-.pub-footer .brand-name .care { color: var(--accent); }
-.pub-footer .brand-sub { color: #8fb0d4; }
+.pub-footer .brand-on-dark {
+  display: inline-flex; align-items: center;
+  background: #fffdf8; border-radius: 12px; padding: 8px 10px;
+}
+.pub-footer .brand-logo { height: 52px; max-width: 220px; }
 .pub-footer h4 { margin: 0 0 10px; font-size: 13px; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
 .pub-footer a, .pub-footer p { display: block; color: #c5d8ec; text-decoration: none; font-size: 13px; margin: 0 0 6px; }
 .pub-footer a:hover { color: #fff; }
@@ -1119,6 +1125,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 @media (max-width: 640px) {
   .pub-header { padding: 12px 14px; }
+  .mc-header .brand-logo, .brand-logo { height: 40px; max-width: 170px; }
   .pub-nav a { padding: 10px 12px; }
   .pub-values-inner, .pub-services, .pub-therapists, .pub-faq, .pub-care, .pub-band, .pub-footer-grid, .pub-band-grid, .pub-audiences, .match-options-grid {
     grid-template-columns: 1fr;

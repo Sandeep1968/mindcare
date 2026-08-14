@@ -1059,9 +1059,9 @@ function printInvoice(invoiceId) {
   const due = Number(inv.amount) - paid;
   document.getElementById('print-invoice').innerHTML = `
     <div class="report-sheet" style="box-shadow:none;border:none">
-      <div class="report-header">
+          <div class="report-header">
         <div>
-          <div class="report-clinic">MindCare Practice</div>
+          <img class="brand-logo" src="images/logo.png" width="965" height="302" alt="MindCare">
           <div class="muted small">Statement of services (superbill)</div>
         </div>
         <div class="small" style="text-align:right">
@@ -1132,7 +1132,7 @@ function generateReport(patientId) {
   sheet.innerHTML = `
     <div class="report-header">
       <div>
-        <div class="report-clinic">MindCare Practice</div>
+        <img class="brand-logo" src="images/logo.png" width="965" height="302" alt="MindCare">
         <div class="muted small">Confidential health report</div>
       </div>
       <div class="small" style="text-align:right">
