@@ -10,3 +10,7 @@ server/uploads/
 
 # Machine-local Claude Code permissions, not project source
 .claude/settings.local.json
+
+# Independent git repo/remote of its own (github.com/Sandeep1968/mindcare, main
+# branch) — physically present on disk here but not part of this repo's history.
+mindcare/
