@@ -14,7 +14,30 @@ import bugRoutes from './routes/bugs.js';
 const app = express();
 export const hasDb = Boolean(process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('USER:PASSWORD'));
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173', credentials: true }));
+// The client always calls the API via a relative `/api` path — same-origin in
+// production (single Vercel project) and proxied by Vite in local dev/preview —
+// so these requests never actually need CORS. This allowlist only matters if
+// the API is ever hit from a *different* origin (a separate client deployment,
+// a custom domain, or testing straight against the API from a browser).
+const devOrigins = ['http://localhost:5173', 'http://localhost:4173'];
+const configuredOrigins = (process.env.CLIENT_ORIGIN || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([...devOrigins, ...configuredOrigins]);
+
+app.use(cors({
+  origin(origin, callback) {
+    // No Origin header = same-origin call, curl, server-to-server, etc.
+    if (!origin || allowedOrigins.has(origin) || /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    const err = new Error(`Not allowed by CORS: ${origin}`);
+    err.code = 'CORS_NOT_ALLOWED';
+    callback(err);
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '4mb' }));
 
 app.get('/api/health', (_req, res) => {
@@ -38,7 +61,7 @@ app.use('/api/bugs', bugRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  const status = err.code === 'NO_DATABASE_URL' ? 503 : 500;
+  const status = err.code === 'NO_DATABASE_URL' ? 503 : err.code === 'CORS_NOT_ALLOWED' ? 403 : 500;
   res.status(status).json({ error: err.message || 'Server error' });
 });
 
