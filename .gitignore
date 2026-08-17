@@ -1,2 +1,12 @@
 .vercel
+node_modules/
+dist/
 .env*
+*.log
+.DS_Store
+server/.env
+client/dist/
+server/uploads/
+
+# Machine-local Claude Code permissions, not project source
+.claude/settings.local.json

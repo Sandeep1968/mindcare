@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CareNexa — Wireframe Prototype</title>
+  <meta name="description" content="Clickable wireframe prototype for CareNexa — public booking and therapist workflow journeys. Not the final visual design.">
+  <link rel="icon" href="public/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <div class="proto-banner" role="note">
+    <strong>CareNexa Wireframe Prototype</strong> — for internal review only. Not final visual design.
+    Fictional demo data only. No real authentication, APIs, or PHI. Does not claim HIPAA compliance.
+  </div>
+
+  <div id="app" role="main"></div>
+
+  <!-- Persistent overlay containers — never wiped by route re-renders -->
+  <div id="drawer-root"></div>
+  <div id="modal-root"></div>
+  <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
+  <div id="demo-panel-root"></div>
+
+  <!-- Plain script tags (no bundler / no ES modules) so this runs by simply
+       opening index.html in a browser, with no server required. -->
+  <script src="src/data.js"></script>
+  <script src="src/state.js"></script>
+  <script src="src/components.js"></script>
+  <script src="src/views/public.js"></script>
+  <script src="src/views/booking.js"></script>
+  <script src="src/views/auth.js"></script>
+  <script src="src/views/staff.js"></script>
+  <script src="src/router.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
