@@ -104,13 +104,29 @@ Legacy `/login`, `/app`, `/portal` redirect into `/dashboard/*`.
 - `GET /api/dashboard/overview`
 - `POST /api/auth/login|setup` · `GET /api/auth/me`
 
+### Deploying (Vercel — client + server together)
+
+Both halves deploy as **one Vercel project** from the repo root:
+- The client (`client/`) builds to static files (`client/dist`).
+- The server (`server/src/app.js`, the same Express app used locally) runs as a
+  Vercel serverless function via `api/[...path].mjs`, reachable at `/api/*` —
+  matching the client's existing same-origin `/api` fetch calls, so no CORS
+  setup is needed in production.
+
+`vercel.json` at the repo root already wires this up (install/build commands,
+output directory, and the SPA fallback rewrite for React Router). To deploy:
+
+1. Import this GitHub repo into Vercel ([vercel.com/new](https://vercel.com/new)) — leave **Root Directory** as the repo root, not `client/` or `server/`.
+2. In the project's **Environment Variables**, add everything from `server/.env.example` (at minimum `DATABASE_URL` and `JWT_SECRET` — without `DATABASE_URL` the API runs in demo mode).
+3. Deploy. Vercel installs `client/` and `server/` dependencies, builds the client, and serves both from the same domain.
+4. Run migrations/seed once against the production database (from your machine, with `server/.env` pointed at the production `DATABASE_URL`): `npm run db:migrate && npm run db:seed`.
+
 ### Next steps (not in this pass)
 
 - Match quiz + assessments UI ported from static site
 - Billing / invoices UI
 - Video visit settings
 - Clinical notes detail pages
-- Deploy client (Vercel) + API (Railway/Render) with Neon production branch
 
 ---
 
