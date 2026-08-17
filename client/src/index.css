@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mc-cream: #f7f1e6;
+  --color-mc-navy: #003e7e;
+  --color-mc-navy-deep: #002a56;
+  --color-mc-ink: #0b2540;
+  --color-mc-ink-soft: #4279b0;
+  --color-mc-gold: #ffb81c;
+  --color-mc-gold-deep: #c48900;
+  --color-mc-gold-soft: #fff3d6;
+  --color-mc-line: #e5dcc8;
+  --color-mc-navy-soft: #e4eef8;
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-mc-cream);
+  color: var(--color-mc-ink);
+  font-family: var(--font-sans);
+}
+
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mcSoftPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 184, 28, 0.45); }
+  55% { box-shadow: 0 0 0 10px rgba(255, 184, 28, 0); }
+}
+
+@keyframes bugWiggle {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  18% { transform: rotate(-14deg) translateY(-2px); }
+  36% { transform: rotate(12deg) translateY(0); }
+  54% { transform: rotate(-8deg) translateY(-1px); }
+  72% { transform: rotate(7deg); }
+}
+
+@keyframes bugAntenna {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes bugPing {
+  0% { transform: scale(0.7); opacity: 0.55; }
+  70% { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+@keyframes bugSheetIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bugOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mcShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.animate-hero-float {
+  animation: heroFloat 5.5s ease-in-out infinite;
+}
+
+.animate-hero-in {
+  animation: heroFadeIn .4s ease both;
+}
+
+.mc-reveal {
+  opacity: 0;
+  transform: translate3d(0, var(--mc-reveal-y, 18px), 0);
+  transition:
+    opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1) var(--mc-reveal-delay, 0ms),
+    transform 0.65s cubic-bezier(0.22, 1, 0.36, 1) var(--mc-reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.mc-reveal-in {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.mc-card-lift {
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s ease,
+    border-color 0.25s ease;
+}
+
+.mc-card-lift:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 14px 32px rgba(11, 37, 64, 0.1);
+  border-color: rgba(0, 62, 126, 0.22);
+}
+
+.mc-btn-pulse {
+  animation: mcSoftPulse 2.8s ease-out infinite;
+}
+
+.mc-bug-btn {
+  position: relative;
+}
+
+.mc-bug-ping {
+  position: absolute;
+  inset: -3px;
+  border-radius: 0.85rem;
+  border: 2px solid rgba(255, 184, 28, 0.7);
+  animation: bugPing 2.2s ease-out infinite;
+  pointer-events: none;
+}
+
+.mc-bug-icon {
+  display: block;
+  animation: bugWiggle 2.4s ease-in-out infinite;
+  transform-origin: 50% 70%;
+}
+
+.mc-bug-overlay {
+  animation: bugOverlayIn 0.22s ease both;
+}
+
+.mc-bug-sheet {
+  animation: bugSheetIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mc-link-nudge {
+  transition: transform 0.25s ease, color 0.2s ease;
+}
+
+.mc-link-nudge:hover {
+  transform: translateX(3px);
+}
+
+.mc-img-zoom {
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .mc-img-zoom,
+.group:focus-visible .mc-img-zoom {
+  transform: scale(1.05);
+}
+
+.mc-gold-underline {
+  background-image: linear-gradient(90deg, transparent, rgba(255, 184, 28, 0.55), transparent);
+  background-size: 200% 2px;
+  background-repeat: no-repeat;
+  background-position: 100% 100%;
+}
+
+.group:hover .mc-gold-underline {
+  animation: mcShimmer 0.9s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-float,
+  .animate-hero-in,
+  .mc-btn-pulse,
+  .mc-bug-icon,
+  .mc-bug-ping,
+  .mc-bug-overlay,
+  .mc-bug-sheet {
+    animation: none;
+  }
+
+  .mc-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .mc-card-lift:hover,
+  .mc-link-nudge:hover,
+  .group:hover .mc-img-zoom {
+    transform: none;
+  }
+}
