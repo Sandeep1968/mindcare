@@ -28,6 +28,7 @@ import { copyText } from '../../lib/videoLaunch';
 import { appointmentGoogleLinks, busyFeedUrl } from '../../lib/calendarLinks';
 import { formatClock, formatDualTime, getClinicTimeZone, INDIA_TZ, tzShortLabel } from '../../lib/timezones';
 import VideoJoinGuide, { HOST_CHECKLIST } from '../../components/VideoJoinGuide';
+import { avatarColor, initials } from './clients/clientData';
 
 const VIEW_KEY = 'mindcare.appt.view';
 const DATE_KEY = 'mindcare.appt.date';
@@ -42,17 +43,6 @@ function parseIso(iso) {
 
 function formatDayTitle(iso) {
   return parseIso(iso).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-}
-
-function avatarColor(name = '') {
-  const colors = ['#003e7e', '#c48900', '#2f5d8c', '#8a6a1a', '#4279b0'];
-  let n = 0;
-  for (let i = 0; i < name.length; i += 1) n += name.charCodeAt(i);
-  return colors[n % colors.length];
-}
-
-function initials(name = '') {
-  return name.split(' ').map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
 }
 
 function statusTone(status) {

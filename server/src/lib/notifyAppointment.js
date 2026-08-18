@@ -1,6 +1,6 @@
 import { DEMO_USERS } from '../demo.js';
-import { buildAppointmentIcs, formatVisitLabel, googleCalendarUrl } from './calendar.js';
-import { sendMail } from './mail.js';
+import { buildAppointmentIcs, googleCalendarUrl, clinicTz } from './calendar.js';
+import { sendMail, organizerEmail, defaultReplyTo, clinicContactLine } from './mail.js';
 import { getClinicVideoSettings, persistAppointmentMeeting, resolveMeeting } from './video.js';
 import { toDateIso, toTimeHm } from './dates.js';
 
@@ -29,39 +29,105 @@ export function resolveTherapistEmail(therapistName) {
   return process.env.DEFAULT_THERAPIST_EMAIL || doctor?.email || 'doctor@mindcare.local';
 }
 
-function logisticsDescription(appt, patient, role, meeting) {
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatFriendlyWhen(date, time) {
+  const d = new Date(`${date}T${String(time).slice(0, 5)}:00`);
+  if (Number.isNaN(d.getTime())) return `${date} at ${String(time).slice(0, 5)}`;
+  const tz = clinicTz() === 'America/New_York' ? 'ET' : clinicTz();
+  const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const clock = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${day} at ${clock} ${tz}`;
+}
+
+function appointmentSubject({ role, event, date, time, patientName }) {
+  const when = formatFriendlyWhen(date, time);
+  if (event === 'cancelled') {
+    return role === 'patient'
+      ? `MindCare appointment cancelled — ${when}`
+      : `Session cancelled — ${when} (${patientName})`;
+  }
+  if (event === 'rescheduled') {
+    return role === 'patient'
+      ? `MindCare appointment updated — ${when}`
+      : `Session updated — ${when} (${patientName})`;
+  }
+  return role === 'patient'
+    ? `Your MindCare appointment — ${when}`
+    : `Session scheduled — ${when} (${patientName})`;
+}
+
+function logisticsRows(appt, patient, role, meeting) {
   const type = appt.session_type || appt.type;
-  const when = formatVisitLabel({
-    type,
-    date: toDateIso(appt.appt_date || appt.date),
-    time: toTimeHm(appt.appt_time || appt.time),
-  });
-  const lines = [
-    `${CLINIC.name} appointment confirmation`,
-    `When: ${when} (${appt.duration_min || appt.duration || 50} min)`,
-    `With: ${appt.therapist || 'Therapist'}`,
-    `Client: ${patient?.name || 'Client'}`,
+  const date = toDateIso(appt.appt_date || appt.date);
+  const time = toTimeHm(appt.appt_time || appt.time);
+  const rows = [
+    ['When', `${formatFriendlyWhen(date, time)} (${appt.duration_min || appt.duration || 50} minutes)`],
+    ['Therapist', appt.therapist || 'Therapist'],
   ];
+  if (role === 'therapist') rows.push(['Patient', patient?.name || 'Patient']);
   if (type === 'in-person') {
-    lines.push(`Location: ${appt.location || CLINIC.address}`);
+    rows.push(['Location', appt.location || CLINIC.address]);
   } else if (meeting?.provider === 'zoom' && (meeting.joinUrl || meeting.hostUrl)) {
     if (role === 'patient') {
-      lines.push(`Join Zoom (your Zoom login or guest): ${meeting.joinUrl}`);
-      lines.push('Wait in Waiting Room until your therapist admits you. Do not use the clinic Zoom login.');
+      rows.push(['Join link', meeting.joinUrl]);
+      rows.push(['Note', 'Use your own Zoom login or join as guest. Wait in the Waiting Room until admitted.']);
     } else {
-      lines.push(`Start Zoom as host (clinic Zoom login): ${meeting.hostUrl || meeting.joinUrl}`);
-      lines.push(`Patient join link: ${meeting.joinUrl}`);
+      rows.push(['Host link', meeting.hostUrl || meeting.joinUrl]);
+      rows.push(['Patient join link', meeting.joinUrl]);
     }
   } else {
     const link = meeting?.joinUrl || appt.video_link || appt.link || '';
-    lines.push(link ? `Virtual visit link: ${link}` : 'Virtual visit: Zoom link will be shared from Video Visits.');
+    rows.push(['Visit link', link || 'Link will be sent from the clinic before your session.']);
   }
-  if (role === 'patient') {
-    lines.push('', 'If you need to reschedule, contact the clinic. Do not reply with clinical details by email.');
-  } else {
-    lines.push('', 'This time is marked busy on your calendar invite. Decline/cancel in calendar if the visit changes.');
-  }
-  return lines.join('\n');
+  return rows;
+}
+
+function logisticsText(rows, footerNote) {
+  return [
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    '',
+    footerNote,
+    '',
+    clinicContactLine(),
+    defaultReplyTo() ? `Reply to this message at ${defaultReplyTo()}.` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function appointmentHtml({ greeting, lead, rows, calendarUrl, footerNote }) {
+  const rowHtml = rows
+    .map(([label, value]) => {
+      const val = String(value);
+      const linked = /^https?:\/\//i.test(val)
+        ? `<a href="${escapeHtml(val)}" style="color:#003e7e;word-break:break-all">${escapeHtml(val)}</a>`
+        : escapeHtml(val);
+      return `<tr><td style="padding:8px 16px 8px 0;color:#64748b;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td><td style="padding:8px 0;color:#0f172a">${linked}</td></tr>`;
+    })
+    .join('');
+  return `<!DOCTYPE html>
+<html lang="en"><body style="margin:0;padding:0;background:#f8fafc">
+<div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+  <p style="margin:0 0 12px;font-size:15px">${greeting}</p>
+  <p style="margin:0 0 20px;font-size:15px;line-height:1.5">${lead}</p>
+  <table role="presentation" style="border-collapse:collapse;font-size:14px;line-height:1.5;width:100%">${rowHtml}</table>
+  ${calendarUrl ? `<p style="margin:20px 0 0"><a href="${escapeHtml(calendarUrl)}" style="color:#003e7e;font-weight:600">Add to Google Calendar</a></p>` : ''}
+  <p style="margin:20px 0 0;font-size:13px;color:#475569;line-height:1.5">${escapeHtml(footerNote)}</p>
+  <p style="margin:16px 0 0;font-size:12px;color:#64748b;line-height:1.5">${escapeHtml(clinicContactLine())}</p>
+</div></body></html>`;
+}
+
+function logisticsDescription(appt, patient, role, meeting) {
+  const rows = logisticsRows(appt, patient, role, meeting);
+  const footer = role === 'patient'
+    ? 'To reschedule, reply to this email or contact the clinic. Please do not include clinical details by email.'
+    : 'Accept the attached calendar invite to block this time. Decline in calendar if the visit changes.';
+  return logisticsText(rows, footer);
 }
 
 /**
@@ -96,16 +162,19 @@ export async function notifyAppointmentBooked({ appointment, patient, event = 'c
     }
   }
 
+  const patientRows = logisticsRows(appt, patient, 'patient', meeting);
+  const therapistRows = logisticsRows(appt, patient, 'therapist', meeting);
   const patientDetails = logisticsDescription(appt, patient, 'patient', meeting);
   const therapistDetails = logisticsDescription(appt, patient, 'therapist', meeting);
+  const orgEmail = organizerEmail();
 
   const location =
     type === 'in-person'
       ? appt.location || CLINIC.address
       : meeting?.joinUrl || appt.video_link || appt.link || 'Virtual Zoom session';
 
-  const titlePatient = `${CLINIC.name}: ${type === 'in-person' ? 'In-person' : 'Virtual Zoom'} visit`;
-  const titleTherapist = `Busy — Session with client (${type === 'in-person' ? 'in-person' : 'virtual Zoom'})`;
+  const titlePatient = `${CLINIC.name} appointment`;
+  const titleTherapist = `${CLINIC.name} — session block`;
 
   const gcalPatient = googleCalendarUrl({
     title: titlePatient,
@@ -126,8 +195,7 @@ export async function notifyAppointmentBooked({ appointment, patient, event = 'c
   });
 
   const results = { patient: null, therapist: null, googleCalendar: { patient: gcalPatient, therapist: gcalTherapist } };
-
-  const verb = event === 'rescheduled' ? 'updated' : event === 'cancelled' ? 'cancelled' : 'confirmed';
+  const replyTo = defaultReplyTo();
 
   // Patient email
   if (patientEmail) {
@@ -140,33 +208,40 @@ export async function notifyAppointmentBooked({ appointment, patient, event = 'c
       time,
       durationMin: duration,
       organizerName: CLINIC.fromName,
-      organizerEmail: process.env.SMTP_FROM?.match(/<([^>]+)>/)?.[1] || 'noreply@mindcare.local',
+      organizerEmail: orgEmail,
       attendeeName: patientName,
       attendeeEmail: patientEmail,
       method: event === 'cancelled' ? 'CANCEL' : 'REQUEST',
     });
+    const patientLead = event === 'cancelled'
+      ? 'Your appointment has been cancelled.'
+      : event === 'rescheduled'
+        ? 'Your appointment time has been updated.'
+        : 'This message confirms your upcoming appointment.';
+    const patientFooter = 'A calendar file is attached if you want to save the visit on your phone or computer.';
     try {
       results.patient = await sendMail({
         to: patientEmail,
-        subject: `MindCare visit ${verb}: ${date} at ${time}`,
+        replyTo,
+        subject: appointmentSubject({ role: 'patient', event, date, time, patientName }),
         text: [
           `Hello ${patientName},`,
           '',
-          `Your appointment is ${verb}.`,
-          patientDetails,
+          patientLead,
           '',
-          `Add to Google Calendar: ${gcalPatient}`,
+          logisticsText(patientRows, patientFooter),
           '',
-          'An .ics calendar file is attached — open it to save the visit on your phone or computer.',
+          `Google Calendar: ${gcalPatient}`,
         ].join('\n'),
-        html: `
-          <p>Hello ${escapeHtml(patientName)},</p>
-          <p>Your appointment is <strong>${verb}</strong>.</p>
-          <pre style="font-family:Segoe UI,sans-serif;white-space:pre-wrap">${escapeHtml(patientDetails)}</pre>
-          <p><a href="${gcalPatient}">Add to Google Calendar</a></p>
-          <p style="color:#666;font-size:12px">Calendar invite attached (.ics). Emails contain scheduling details only.</p>
-        `,
+        html: appointmentHtml({
+          greeting: `Hello ${patientName},`,
+          lead: patientLead,
+          rows: patientRows,
+          calendarUrl: gcalPatient,
+          footerNote: patientFooter,
+        }),
         icsContent: ics,
+        icsFilename: 'mindcare-appointment.ics',
       });
     } catch (err) {
       results.patient = { status: 'failed', error: err.message, to: patientEmail };
@@ -186,33 +261,40 @@ export async function notifyAppointmentBooked({ appointment, patient, event = 'c
       time,
       durationMin: duration,
       organizerName: CLINIC.fromName,
-      organizerEmail: process.env.SMTP_FROM?.match(/<([^>]+)>/)?.[1] || 'noreply@mindcare.local',
+      organizerEmail: orgEmail,
       attendeeName: therapistName,
       attendeeEmail: therapistEmail,
       method: event === 'cancelled' ? 'CANCEL' : 'REQUEST',
     });
+    const therapistLead = event === 'cancelled'
+      ? 'A session on your calendar was cancelled.'
+      : event === 'rescheduled'
+        ? 'A session on your calendar was updated.'
+        : 'A new session was added to your schedule.';
+    const therapistFooter = 'Accept the calendar invite to mark this time as busy.';
     try {
       results.therapist = await sendMail({
         to: therapistEmail,
-        subject: `Calendar hold ${verb}: ${date} ${time} (${patientName})`,
+        replyTo,
+        subject: appointmentSubject({ role: 'therapist', event, date, time, patientName }),
         text: [
           `Hello ${therapistName},`,
           '',
-          `A session was ${verb}. This invite marks you BUSY for that slot.`,
-          therapistDetails,
+          therapistLead,
           '',
-          `Add to Google Calendar: ${gcalTherapist}`,
+          logisticsText(therapistRows, therapistFooter),
           '',
-          'Tip: Subscribe to your MindCare busy feed in Google Calendar so future bookings sync automatically.',
+          `Google Calendar: ${gcalTherapist}`,
         ].join('\n'),
-        html: `
-          <p>Hello ${escapeHtml(therapistName)},</p>
-          <p>A session was <strong>${verb}</strong>. Accept the calendar invite to <strong>block this time</strong> so overlapping bookings are avoided.</p>
-          <pre style="font-family:Segoe UI,sans-serif;white-space:pre-wrap">${escapeHtml(therapistDetails)}</pre>
-          <p><a href="${gcalTherapist}">Add to Google Calendar</a></p>
-        `,
+        html: appointmentHtml({
+          greeting: `Hello ${therapistName},`,
+          lead: therapistLead,
+          rows: therapistRows,
+          calendarUrl: gcalTherapist,
+          footerNote: therapistFooter,
+        }),
         icsContent: ics,
-        icsFilename: 'mindcare-busy-block.ics',
+        icsFilename: 'mindcare-session.ics',
       });
     } catch (err) {
       results.therapist = { status: 'failed', error: err.message, to: therapistEmail };
@@ -233,9 +315,3 @@ export async function notifyAppointmentBooked({ appointment, patient, event = 'c
   };
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}

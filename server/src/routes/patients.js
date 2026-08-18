@@ -8,8 +8,24 @@ const router = Router();
 
 router.use(authRequired, requireStaff);
 
+function normalizePatient(p) {
+  if (!p) return p;
+  return {
+    ...p,
+    care_type: p.care_type || 'Individual Therapy',
+    therapist: p.therapist || '',
+    visit_pref: p.visit_pref || 'Virtual',
+    frequency: p.frequency || 'Weekly',
+    status: p.status || 'active',
+    primary_concern: p.primary_concern || '',
+    preferred_comm: p.preferred_comm || 'Email',
+  };
+}
+
+/* Run schema migrations exactly once per server process, not on every request. */
+let _columnsReady = false;
 async function ensurePatientColumns() {
-  if (!hasDatabase()) return;
+  if (_columnsReady || !hasDatabase()) return;
   try {
     await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT ''`;
     await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''`;
@@ -24,7 +40,8 @@ async function ensurePatientColumns() {
     await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS preferred_comm TEXT DEFAULT 'Email'`;
     await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS client_code TEXT DEFAULT ''`;
     await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS emergency_phone TEXT DEFAULT ''`;
-  } catch { /* ignore */ }
+    _columnsReady = true;
+  } catch { /* ignore — will retry next request */ }
 }
 
 router.get('/', async (req, res) => {
@@ -38,10 +55,14 @@ router.get('/', async (req, res) => {
           p.name.toLowerCase().includes(q) ||
           (p.email || '').toLowerCase().includes(q) ||
           (p.phone || '').includes(q) ||
-          (p.client_code || '').toLowerCase().includes(q),
+          (p.client_code || '').toLowerCase().includes(q) ||
+          (p.primary_concern || '').toLowerCase().includes(q),
       );
     }
-    return res.json(rows);
+    const payload = rows.map(normalizePatient);
+    /* Short cache for demo — prevents duplicate fetches within 10 s */
+    res.set('Cache-Control', 'private, max-age=10');
+    return res.json(payload);
   }
 
   await ensurePatientColumns();
@@ -50,13 +71,19 @@ router.get('/', async (req, res) => {
     const like = `%${q}%`;
     rows = await sql`
       SELECT * FROM patients
-      WHERE lower(name) LIKE ${like} OR lower(coalesce(email,'')) LIKE ${like} OR coalesce(phone,'') LIKE ${like}
+      WHERE lower(name) LIKE ${like}
+        OR lower(coalesce(email,'')) LIKE ${like}
+        OR coalesce(phone,'') LIKE ${like}
+        OR lower(coalesce(client_code,'')) LIKE ${like}
+        OR lower(coalesce(primary_concern,'')) LIKE ${like}
       ORDER BY name
     `;
   } else {
     rows = await sql`SELECT * FROM patients ORDER BY name`;
   }
-  res.json(rows);
+  const payload = rows.map(normalizePatient);
+  res.set('Cache-Control', 'private, max-age=20');
+  res.json(payload);
 });
 
 router.get('/:id', async (req, res) => {
@@ -64,14 +91,14 @@ router.get('/:id', async (req, res) => {
     const patient = demoState.patients.find((p) => p.id === req.params.id);
     if (!patient) return res.status(404).json({ error: 'Not found' });
     const appointments = demoState.appointments.filter((a) => a.patient_id === patient.id);
-    return res.json({ ...patient, records: [], appointments });
+    return res.json({ ...normalizePatient(patient), records: [], appointments });
   }
   await ensurePatientColumns();
   const [patient] = await sql`SELECT * FROM patients WHERE id = ${req.params.id}`;
   if (!patient) return res.status(404).json({ error: 'Not found' });
   const records = await sql`SELECT * FROM clinical_records WHERE patient_id = ${patient.id} ORDER BY record_date DESC`;
   const appointments = await sql`SELECT * FROM appointments WHERE patient_id = ${patient.id} ORDER BY appt_date DESC, appt_time DESC`;
-  res.json({ ...patient, records, appointments });
+  res.json({ ...normalizePatient(patient), records, appointments });
 });
 
 const patientBody = z.object({

@@ -1,18 +1,22 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { sql } from '../db.js';
-import { authRequired, requireStaff } from '../middleware/auth.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { hasDatabase, demoState, newId } from '../demo.js';
 import { sendMail } from '../lib/mail.js';
 
 const router = Router();
-router.use(authRequired, requireStaff);
+router.use(optionalAuth);
 
 const DEV_BUG_EMAILS = [
   'cseshivangi599@gmail.com',
   'malhotra.05@gmail.com',
   'ankit.malhotra97.am@gmail.com',
 ];
+
+function titleCase(s) {
+  return String(s || '').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function bugReportRecipients() {
   const extra = String(process.env.BUG_REPORT_EMAIL || '')
@@ -89,6 +93,9 @@ const bodySchema = z.object({
   screenshotName: z.string().optional().default(''),
   browser: z.string().optional().default(''),
   viewport: z.string().optional().default(''),
+  source: z.enum(['website', 'dashboard', 'portal']).optional().default('website'),
+  reporterName: z.string().max(120).optional().default(''),
+  reporterEmail: z.string().email().optional().or(z.literal('')).default(''),
 });
 
 router.post('/', async (req, res) => {
@@ -99,12 +106,18 @@ router.post('/', async (req, res) => {
   }
   const d = parsed.data;
   const screenshot = d.screenshot && d.screenshot.startsWith('data:image/') ? d.screenshot : '';
+  const reporterName = (req.user?.name || d.reporterName || '').trim();
+  const reporterEmail = (req.user?.email || d.reporterEmail || '').trim();
+  const reporterRole = req.user?.role || (d.source === 'website' ? 'website visitor' : 'guest');
+  if (!reporterEmail) {
+    return res.status(400).json({ error: 'Add your email so the team can follow up' });
+  }
   const row = {
     id: newId(),
     created_at: new Date().toISOString(),
-    reporter_name: req.user?.name || '',
-    reporter_email: req.user?.email || '',
-    reporter_role: req.user?.role || '',
+    reporter_name: reporterName || 'Website visitor',
+    reporter_email: reporterEmail,
+    reporter_role: reporterRole,
     page_name: d.pageName.trim(),
     page_route: d.pageRoute.trim(),
     title: d.title.trim(),
@@ -145,7 +158,7 @@ router.post('/', async (req, res) => {
   const shot = dataUrlToAttachment(screenshot, row.screenshot_name || 'screenshot.jpg');
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;color:#0b2540;max-width:640px">
-      <p style="font-size:13px;color:#c48900;font-weight:700;letter-spacing:.04em;margin:0 0 6px">MINDCARE BUG ${escapeHtml(ticket)}</p>
+      <p style="font-size:13px;color:#64748b;font-weight:600;letter-spacing:.02em;margin:0 0 6px">MindCare bug ${escapeHtml(ticket)} · ${escapeHtml(d.source || 'website')}</p>
       <h2 style="margin:0 0 12px;font-size:20px">${escapeHtml(row.title)}</h2>
       <p><strong>Severity:</strong> ${escapeHtml(row.severity)} · <strong>How often:</strong> ${escapeHtml(row.frequency)}</p>
       <p><strong>Page:</strong> ${escapeHtml(row.page_name)}<br/>
@@ -165,9 +178,9 @@ router.post('/', async (req, res) => {
   try {
     await sendMail({
       to,
-      subject: `[${ticket}] ${row.severity.toUpperCase()} · ${row.page_name}: ${row.title}`,
+      subject: `[${ticket}] ${titleCase(d.source || 'website')} · ${titleCase(row.severity)} · ${row.page_name}: ${row.title}`,
       text: [
-        `MindCare bug ${ticket}`,
+        `MindCare bug ${ticket} (${d.source || 'website'})`,
         `Severity: ${row.severity} · Frequency: ${row.frequency}`,
         `Page: ${row.page_name}`,
         `Route: ${row.page_route}`,

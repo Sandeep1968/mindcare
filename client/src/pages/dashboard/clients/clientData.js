@@ -23,6 +23,18 @@ export const GENDERS = ['Female', 'Male', 'Non-binary', 'Prefer not to say', 'Ot
 
 export const FREQUENCIES = ['Weekly', 'Biweekly', 'Monthly', 'As needed'];
 
+export const PRESENTING_CONCERNS = [
+  'Anxiety & Stress',
+  'Depression & Mood',
+  'Relationships',
+  'Trauma & Recovery',
+  'Life Transitions',
+  'Grief & Loss',
+  'ADHD / Focus',
+  'Personal Growth',
+  'General / Not sure yet',
+];
+
 export function readLocal(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -215,20 +227,39 @@ export function outstandingBalance(client) {
   return clientOutstanding(client, loadInvoices());
 }
 
-export function attentionFlags(client, appointments = []) {
+/**
+ * Load the shared caches needed by attentionFlags/lastVisit/nextAppointment
+ * once, then pass the result to each per-client call. Avoids re-reading
+ * localStorage on every patient row in the list.
+ */
+export function loadAttentionCaches() {
+  return {
+    invoices: loadInvoices(),
+    forms: readLocal('mindcare.demo.clientForms', []),
+    plans: readLocal('mindcare.demo.plans', []),
+  };
+}
+
+export function attentionFlags(client, appointments = [], caches = null) {
+  /* Accept pre-loaded caches from loadAttentionCaches() to avoid
+     repeated localStorage reads when called in a loop over patients. */
+  const inv   = caches?.invoices ?? loadInvoices();
+  const forms = caches?.forms   ?? readLocal('mindcare.demo.clientForms', []);
+  const plans = caches?.plans   ?? readLocal('mindcare.demo.plans', []);
+
   const flags = [];
-  const bal = outstandingBalance(client);
+  const bal = clientOutstanding(client, inv);
   if (bal > 0) flags.push({ key: 'payment', label: 'Payment' });
 
-  const forms = readLocal('mindcare.demo.clientForms', []).filter((f) => f.patientId === client.id);
-  if (forms.some((f) => f.status === 'Pending' || f.status === 'Needs Review')) {
+  const clientForms = forms.filter((f) => f.patientId === client.id);
+  if (clientForms.some((f) => f.status === 'Pending' || f.status === 'Needs Review')) {
     flags.push({ key: 'forms', label: 'Forms' });
   }
 
-  const plans = readLocal('mindcare.demo.plans', []).filter(
+  const clientPlans = plans.filter(
     (p) => p.patientId === client.id || p.client === client.name,
   );
-  const active = plans.find((p) => p.status === 'active');
+  const active = clientPlans.find((p) => p.status === 'active');
   if (active?.review) {
     const review = new Date(`${active.review}T12:00:00`);
     const soon = new Date();
@@ -236,6 +267,7 @@ export function attentionFlags(client, appointments = []) {
     if (review <= soon) flags.push({ key: 'plan', label: 'Plan review' });
   }
 
+  const today = todayIso();
   const upcoming = appointments
     .filter((a) => {
       const pid = a.patient_id || a.patientId;
@@ -244,20 +276,33 @@ export function attentionFlags(client, appointments = []) {
     .sort((a, b) => `${a.appt_date || a.date}${a.appt_time || a.time}`.localeCompare(`${b.appt_date || b.date}${b.appt_time || b.time}`));
   if (upcoming[0]) {
     const d = upcoming[0].appt_date || upcoming[0].date;
-    if (d === todayIso()) flags.push({ key: 'appt', label: 'Today' });
+    if (d === today) flags.push({ key: 'appt', label: 'Today' });
   }
 
-  if (client.status === 'new' && !client.phone) flags.push({ key: 'info', label: 'Missing info' });
+  if (client.status === 'new') flags.push({ key: 'intake', label: 'Intake' });
+  if (!client.emergency && !client.emergency_phone) flags.push({ key: 'safety', label: 'No emergency contact' });
+
+  const hasUpcoming = appointments.some((a) => {
+    const pid = a.patient_id || a.patientId;
+    const d = a.appt_date || a.date;
+    return pid === client.id && d >= today && !['cancelled', 'declined', 'completed', 'no-show'].includes(a.status);
+  });
+  if ((client.status || 'active') === 'active' && !hasUpcoming) {
+    flags.push({ key: 'gap', label: 'Needs scheduling' });
+  }
 
   return flags;
 }
 
 export function lastVisit(client, appointments = []) {
+  const today = todayIso();
   const past = appointments
     .filter((a) => {
       const pid = a.patient_id || a.patientId;
-      const st = a.status;
-      return pid === client.id && (st === 'completed' || st === 'no-show');
+      const d = a.appt_date || a.date;
+      if (pid !== client.id || !d || d > today) return false;
+      if (['cancelled', 'declined'].includes(a.status)) return false;
+      return true;
     })
     .map((a) => a.appt_date || a.date)
     .filter(Boolean)
@@ -419,6 +464,13 @@ export function buildCareJourney(client, { appointments = [], role }) {
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
+export function avatarColor(name = '') {
+  const colors = ['#003e7e', '#c48900', '#2f5d8c', '#8a6a1a', '#4279b0'];
+  let n = 0;
+  for (let i = 0; i < name.length; i += 1) n += name.charCodeAt(i);
+  return colors[n % colors.length];
+}
+
 export function initials(name = '') {
   return name
     .split(/\s+/)
@@ -429,6 +481,16 @@ export function initials(name = '') {
 }
 
 export function statusLabel(s) {
-  if (!s) return 'Active';
+  if (s === 'new') return 'Intake';
+  if (s === 'inactive') return 'On hold / discharged';
+  if (!s) return 'Active in care';
+  if (s === 'active') return 'Active in care';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function visitKindLabel(apptOrPref) {
+  const v = apptOrPref?.type || apptOrPref?.session_type || apptOrPref || '';
+  if (v === 'in-person' || v === 'In-person') return 'In-person';
+  if (v === 'video' || v === 'Virtual' || v === 'Either') return 'Zoom';
+  return String(v || 'Zoom');
 }

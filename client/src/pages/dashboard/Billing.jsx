@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import {
@@ -37,11 +37,14 @@ const SERVICE_SUGGESTIONS = [
 export default function Billing() {
   const { user } = useAuth();
   const manage = canManageBilling(user?.role);
+  const [searchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [patients, setPatients] = useState([]);
   const [filter, setFilter] = useState('all');
-  const [q, setQ] = useState('');
+  // Supports a patient chart's "Manage billing →" link (?q=<patient name>)
+  // landing here pre-filtered instead of showing every invoice in the clinic.
+  const [q, setQ] = useState(searchParams.get('q') || '');
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);

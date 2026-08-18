@@ -15,7 +15,15 @@ const empty = {
   frequency: 'always',
   pageName: '',
   pageRoute: '',
+  contactName: '',
+  contactEmail: '',
 };
+
+function reportSource(pathname) {
+  if (pathname.startsWith('/dashboard/portal')) return 'portal';
+  if (pathname.startsWith('/dashboard')) return 'dashboard';
+  return 'website';
+}
 
 async function fileToJpegDataUrl(file) {
   const url = URL.createObjectURL(file);
@@ -142,6 +150,9 @@ export default function BugReportButton() {
           screenshotName: fileName,
           browser: navigator.userAgent,
           viewport: `${window.innerWidth}×${window.innerHeight}`,
+          source: reportSource(location.pathname),
+          reporterName: user?.name || form.contactName,
+          reporterEmail: user?.email || form.contactEmail,
         }),
       });
       setDone(res.ticket || res.id || 'submitted');
@@ -311,8 +322,35 @@ export default function BugReportButton() {
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
                 </div>
 
+                {!user?.email && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-mc-ink-soft">
+                      Your name
+                      <input
+                        required
+                        className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm font-normal text-mc-ink"
+                        value={form.contactName}
+                        onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-mc-ink-soft">
+                      Your email
+                      <input
+                        required
+                        type="email"
+                        className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm font-normal text-mc-ink"
+                        placeholder="so we can follow up"
+                        value={form.contactEmail}
+                        onChange={(e) => setForm({ ...form, contactEmail: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                )}
+
                 <p className="text-[11px] text-mc-ink-soft">
-                  Reporter: <strong>{user?.name}</strong> ({user?.role}) · {user?.email || 'signed in'}
+                  {user?.email
+                    ? <>Reporter: <strong>{user.name}</strong> ({user.role}) · {user.email}</>
+                    : 'Website visitor — include your email so the team can reply.'}
                 </p>
 
                 {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}

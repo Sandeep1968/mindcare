@@ -9,20 +9,22 @@ import {
   findDemoUser,
   publicDemoUser,
 } from '../demo.js';
+import { listPatientPortalUsers, ensurePatientPortalAccounts, setPatientPortalPassword } from '../lib/portalAccounts.js';
 
 const router = Router();
 
 router.get('/users', async (req, res) => {
   const intent = req.query.intent === 'patient' ? 'patient' : 'staff';
+  if (intent === 'patient') {
+    return res.json(await listPatientPortalUsers());
+  }
   if (!hasDatabase()) {
     const rows = DEMO_USERS
-      .filter((u) => (intent === 'patient' ? u.role === 'patient' : u.role !== 'patient'))
+      .filter((u) => u.role !== 'patient')
       .map((u) => ({ id: u.id, name: u.name, role: u.role, email: u.email }));
     return res.json(rows);
   }
-  const rows = intent === 'patient'
-    ? await sql`SELECT id, name, role, email FROM users WHERE role = 'patient' ORDER BY name`
-    : await sql`SELECT id, name, role, email FROM users WHERE role IN ('admin', 'practitioner', 'staff') ORDER BY role, name`;
+  const rows = await sql`SELECT id, name, role, email FROM users WHERE role IN ('admin', 'practitioner', 'staff') ORDER BY role, name`;
   res.json(rows);
 });
 
@@ -67,7 +69,7 @@ router.post('/login', async (req, res) => {
   }).refine((d) => d.userId || d.email, { message: 'Select a user' });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Select a user, then enter password mindcare123' });
+    return res.status(400).json({ error: 'Enter your email and password' });
   }
 
   const { userId, email, password } = parsed.data;
@@ -81,11 +83,23 @@ router.post('/login', async (req, res) => {
     return res.json({ token, user: publicDemoUser(user), demoMode: true });
   }
 
+  try {
+    await ensurePatientPortalAccounts();
+  } catch (err) {
+    console.error('ensurePatientPortalAccounts', err);
+  }
   const rows = userId
     ? await sql`SELECT * FROM users WHERE id = ${userId}`
-    : await sql`SELECT * FROM users WHERE email = ${email.toLowerCase()}`;
-  const user = rows[0];
-  if (!user) return res.status(401).json({ error: 'User not found' });
+    : await sql`SELECT * FROM users WHERE lower(email) = ${email.toLowerCase()}`;
+  let user = rows[0];
+  if (!user) {
+    const demo = findDemoUser({ userId, email });
+    if (demo) {
+      const token = signToken(demo);
+      return res.json({ token, user: publicDemoUser(demo), demoMode: true });
+    }
+    return res.status(401).json({ error: 'User not found' });
+  }
 
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Incorrect password' });
@@ -97,6 +111,66 @@ router.post('/login', async (req, res) => {
   });
 });
 
+router.post('/portal-password', async (req, res) => {
+  const schema = z.object({
+    email: z.string().email(),
+    dob: z.string().min(8),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    const first = parsed.error.issues?.[0];
+    return res.status(400).json({ error: first?.message || 'Enter email, date of birth, and a new password' });
+  }
+  try {
+    const user = await setPatientPortalPassword(parsed.data);
+    const token = signToken(user);
+    return res.json({
+      token,
+      user: publicDemoUser(user),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message || 'Could not set portal password' });
+  }
+});
+
+router.post('/password', authRequired, async (req, res) => {
+  const schema = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    const first = parsed.error.issues?.[0];
+    return res.status(400).json({ error: first?.message || 'Invalid password' });
+  }
+  const { currentPassword, newPassword } = parsed.data;
+
+  if (!hasDatabase()) {
+    const user = findDemoUser({ userId: req.user.sub });
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    const ok = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+    user.password_hash = await bcrypt.hash(newPassword, 10);
+    return res.json({ ok: true });
+  }
+
+  const [user] = await sql`SELECT * FROM users WHERE id = ${req.user.sub}`;
+  if (!user) {
+    const demo = findDemoUser({ userId: req.user.sub });
+    if (!demo) return res.status(401).json({ error: 'User not found' });
+    const ok = await bcrypt.compare(currentPassword, demo.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+    demo.password_hash = await bcrypt.hash(newPassword, 10);
+    return res.json({ ok: true });
+  }
+  const ok = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+  const hash = await bcrypt.hash(newPassword, 10);
+  await sql`UPDATE users SET password_hash = ${hash} WHERE id = ${user.id}`;
+  res.json({ ok: true });
+});
+
 router.get('/me', authRequired, async (req, res) => {
   if (!hasDatabase()) {
     const user = findDemoUser({ userId: req.user.sub });
@@ -104,7 +178,11 @@ router.get('/me', authRequired, async (req, res) => {
     return res.json(publicDemoUser(user));
   }
   const [user] = await sql`SELECT id, name, email, role, patient_id FROM users WHERE id = ${req.user.sub}`;
-  if (!user) return res.status(401).json({ error: 'User not found' });
+  if (!user) {
+    const demo = findDemoUser({ userId: req.user.sub });
+    if (demo) return res.json(publicDemoUser(demo));
+    return res.status(401).json({ error: 'User not found' });
+  }
   res.json({ id: user.id, name: user.name, email: user.email, role: user.role, patientId: user.patient_id });
 });
 

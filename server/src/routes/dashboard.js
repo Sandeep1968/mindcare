@@ -12,6 +12,7 @@ router.get('/overview', authRequired, requireStaff, async (req, res) => {
   if (!hasDatabase()) {
     const todayAppts = demoState.appointments.filter((a) => toDateIso(a.appt_date) === today && (a.status || 'confirmed') !== 'declined');
     const newReqs = demoState.requests.filter((r) => r.status === 'new');
+    res.set('Cache-Control', 'private, max-age=30');
     return res.json({
       role: req.user.role,
       demoMode: true,
@@ -38,23 +39,25 @@ router.get('/overview', authRequired, requireStaff, async (req, res) => {
     });
   }
 
-  const todayAppts = await sql`
-    SELECT a.*, p.name AS patient_name
-    FROM appointments a JOIN patients p ON p.id = a.patient_id
-    WHERE a.appt_date = ${today}
-    ORDER BY a.appt_time
-  `;
-  const [{ new_requests }] = await sql`
-    SELECT COUNT(*)::int AS new_requests FROM appointment_requests WHERE status = 'new'
-  `;
-  const [{ virtual_new }] = await sql`
-    SELECT COUNT(*)::int AS virtual_new FROM appointment_requests WHERE status = 'new' AND session_type = 'video'
-  `;
-  const [{ inperson_new }] = await sql`
-    SELECT COUNT(*)::int AS inperson_new FROM appointment_requests WHERE status = 'new' AND session_type = 'in-person'
-  `;
-  const [{ patients }] = await sql`SELECT COUNT(*)::int AS patients FROM patients`;
+  /* Run all queries in parallel — independent of each other */
+  const [todayAppts, [counts]] = await Promise.all([
+    sql`
+      SELECT a.*, p.name AS patient_name
+      FROM appointments a JOIN patients p ON p.id = a.patient_id
+      WHERE a.appt_date = ${today}
+      ORDER BY a.appt_time
+    `,
+    sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM appointment_requests WHERE status = 'new')           AS new_requests,
+        (SELECT COUNT(*)::int FROM appointment_requests WHERE status = 'new' AND session_type = 'video')     AS virtual_new,
+        (SELECT COUNT(*)::int FROM appointment_requests WHERE status = 'new' AND session_type = 'in-person') AS inperson_new,
+        (SELECT COUNT(*)::int FROM patients)                                              AS patients
+    `,
+  ]);
+  const { new_requests, virtual_new, inperson_new, patients } = counts;
 
+  res.set('Cache-Control', 'private, max-age=30');
   res.json({
     role: req.user.role,
     date: today,

@@ -126,7 +126,7 @@ export default function SiteNav() {
 
       <button
         type="button"
-        className="ml-auto rounded-lg border border-mc-line px-2.5 py-1.5 text-lg text-mc-navy lg:hidden"
+        className="rounded-lg border border-mc-line px-2.5 py-1.5 text-lg text-mc-navy lg:hidden"
         aria-label="Open menu"
         aria-expanded={mobileOpen}
         onClick={() => setMobileOpen((v) => !v)}

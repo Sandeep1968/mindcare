@@ -26,7 +26,13 @@ import ClinicalAssessments from './pages/dashboard/ClinicalAssessments';
 import TreatmentPlans from './pages/dashboard/TreatmentPlans';
 import FormsDocuments from './pages/dashboard/FormsDocuments';
 import Communication from './pages/dashboard/Communication';
-import Portal from './pages/portal/Portal';
+import PortalLayout from './pages/portal/PortalLayout';
+import PortalHome from './pages/portal/PortalHome';
+import PortalTracking from './pages/portal/PortalTracking';
+import PortalAssessments from './pages/portal/PortalAssessments';
+import PortalPrescriptions from './pages/portal/PortalPrescriptions';
+import PortalDocuments from './pages/portal/PortalDocuments';
+import PortalBilling from './pages/portal/PortalBilling';
 
 export default function App() {
   return (
@@ -48,7 +54,14 @@ export default function App() {
           </Route>
 
           <Route path="/dashboard/login" element={<Login />} />
-          <Route path="/dashboard/portal" element={<Portal />} />
+          <Route path="/dashboard/portal" element={<PortalLayout />}>
+            <Route index element={<PortalHome />} />
+            <Route path="tracking" element={<PortalTracking />} />
+            <Route path="assessments" element={<PortalAssessments />} />
+            <Route path="prescriptions" element={<PortalPrescriptions />} />
+            <Route path="documents" element={<PortalDocuments />} />
+            <Route path="billing" element={<PortalBilling />} />
+          </Route>
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />
             <Route path="schedule" element={<Navigate to="/dashboard/appointments" replace />} />

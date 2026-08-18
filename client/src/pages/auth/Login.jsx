@@ -14,12 +14,13 @@ const DEMO_STAFF = [
 const DEMO_PATIENT = {
   id: 'a1000001-0000-4000-8000-000000000004',
   name: 'Alex Rivera',
+  email: 'alex.rivera@example.com',
 };
 
 const DEMO_PASSWORD = 'mindcare123';
 
 export default function Login() {
-  const { login, setup, user } = useAuth();
+  const { login, setup, setupPortalPassword, user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const intent = params.get('intent') === 'patient' ? 'patient' : 'staff';
@@ -28,29 +29,56 @@ export default function Login() {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ userId: '', password: DEMO_PASSWORD, name: '', email: '', password2: '' });
+  const [patientMode, setPatientMode] = useState('signin');
+  const [form, setForm] = useState({
+    userId: '',
+    password: intent === 'staff' ? DEMO_PASSWORD : '',
+    name: '',
+    email: '',
+    password2: '',
+    dob: '',
+  });
 
   useEffect(() => {
     if (user) navigate(user.role === 'patient' ? '/dashboard/portal' : '/dashboard', { replace: true });
   }, [user, navigate]);
 
   useEffect(() => {
+    setError('');
+    setPatientMode('signin');
+    setForm((f) => ({
+      ...f,
+      userId: '',
+      password: intent === 'staff' ? DEMO_PASSWORD : '',
+      password2: '',
+      dob: '',
+    }));
     api('/auth/bootstrap')
       .then((d) => {
         setNeedsSetup(Boolean(d.needsSetup));
         setDemoMode(Boolean(d.demoMode));
       })
       .catch(() => setDemoMode(true));
-    api(`/auth/users?intent=${intent}`)
-      .then(setUsers)
-      .catch(() => setUsers([]));
+    if (intent === 'staff') {
+      api('/auth/users?intent=staff')
+        .then(setUsers)
+        .catch(() => setUsers([]));
+    } else {
+      setUsers([]);
+    }
   }, [intent]);
 
-  async function enterAs(userId) {
+  async function enterAs(userId, email) {
     setError('');
     setBusy(true);
     try {
-      const u = await login({ userId, password: DEMO_PASSWORD });
+      let u;
+      try {
+        u = await login({ userId, password: DEMO_PASSWORD });
+      } catch (first) {
+        if (!email) throw first;
+        u = await login({ email, password: DEMO_PASSWORD });
+      }
       navigate(u.role === 'patient' ? '/dashboard/portal' : '/dashboard');
     } catch (err) {
       setError(err.message);
@@ -64,7 +92,33 @@ export default function Login() {
     setError('');
     setBusy(true);
     try {
-      const u = await login({ userId: form.userId, password: form.password });
+      const u = await login({
+        userId: form.userId || undefined,
+        email: form.email || undefined,
+        password: form.password,
+      });
+      navigate(u.role === 'patient' ? '/dashboard/portal' : '/dashboard');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreatePassword(e) {
+    e.preventDefault();
+    setError('');
+    if (form.password !== form.password2) {
+      setError('Passwords do not match');
+      return;
+    }
+    setBusy(true);
+    try {
+      const u = await setupPortalPassword({
+        email: form.email,
+        dob: form.dob,
+        password: form.password,
+      });
       navigate(u.role === 'patient' ? '/dashboard/portal' : '/dashboard');
     } catch (err) {
       setError(err.message);
@@ -145,17 +199,17 @@ export default function Login() {
           </div>
         )}
 
-        {intent === 'patient' && demoMode && (
+        {intent === 'patient' && (
           <div className="mb-5">
             <button
               type="button"
               disabled={busy}
-              onClick={() => enterAs(DEMO_PATIENT.id)}
+              onClick={() => enterAs(DEMO_PATIENT.id, DEMO_PATIENT.email)}
               className="flex w-full items-center justify-between rounded-xl border border-mc-line bg-white px-3 py-3 text-left transition hover:border-mc-navy hover:bg-mc-navy-soft disabled:opacity-60"
             >
               <span>
-                <span className="block text-sm font-bold text-mc-navy">Existing patient</span>
-                <span className="block text-xs text-mc-ink-soft">{DEMO_PATIENT.name}</span>
+                <span className="block text-sm font-bold text-mc-navy">Demo patient</span>
+                <span className="block text-xs text-mc-ink-soft">{DEMO_PATIENT.name} · password {DEMO_PASSWORD}</span>
               </span>
               <span className="text-sm font-bold text-mc-gold-deep">Enter →</span>
             </button>
@@ -180,13 +234,119 @@ export default function Login() {
             {error && <p className="text-sm text-red-700">{error}</p>}
             <button className="w-full rounded-lg bg-mc-gold py-2.5 text-sm font-bold text-mc-ink">Create account</button>
           </form>
+        ) : intent === 'patient' ? (
+          <div className="space-y-3 border-t border-mc-line pt-4">
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-mc-cream p-1">
+              <button
+                type="button"
+                className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'signin' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
+                onClick={() => { setPatientMode('signin'); setError(''); }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'create' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
+                onClick={() => { setPatientMode('create'); setError(''); setForm({ ...form, password: '', password2: '' }); }}
+              >
+                Create password
+              </button>
+            </div>
+
+            {patientMode === 'create' ? (
+              <form onSubmit={onCreatePassword} className="space-y-3">
+                <h2 className="text-sm font-bold text-mc-navy">Create your portal password</h2>
+                <p className="text-xs text-mc-ink-soft">
+                  Use the email and date of birth on your clinic record. This is how you choose your own password — the clinic does not set one for you.
+                </p>
+                <label className="block text-xs font-semibold text-mc-ink-soft">Email
+                  <input
+                    required
+                    type="email"
+                    autoComplete="username"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.email}
+                    placeholder="you@example.com"
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-mc-ink-soft">Date of birth
+                  <input
+                    required
+                    type="date"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.dob}
+                    onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-mc-ink-soft">New password
+                  <input
+                    required
+                    minLength={6}
+                    type="password"
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-mc-ink-soft">Confirm password
+                  <input
+                    required
+                    minLength={6}
+                    type="password"
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.password2}
+                    onChange={(e) => setForm({ ...form, password2: e.target.value })}
+                  />
+                </label>
+                {error && <p className="text-sm text-red-700">{error}</p>}
+                <button disabled={busy} className="w-full rounded-lg bg-mc-gold py-2.5 text-sm font-bold text-mc-ink disabled:opacity-60">
+                  Save password and enter
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={onLogin} className="space-y-3">
+                <h2 className="text-sm font-bold text-mc-navy">Patient portal sign-in</h2>
+                <p className="text-xs text-mc-ink-soft">
+                  First visit? Switch to <strong>Create password</strong>. Use the same email the clinic has on file.
+                </p>
+                <label className="block text-xs font-semibold text-mc-ink-soft">Email
+                  <input
+                    required
+                    type="email"
+                    autoComplete="username"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.email}
+                    placeholder="you@example.com"
+                    onChange={(e) => setForm({ ...form, email: e.target.value, userId: '' })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-mc-ink-soft">Password
+                  <input
+                    required
+                    type="password"
+                    autoComplete="current-password"
+                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                </label>
+                {error && <p className="text-sm text-red-700">{error}</p>}
+                <button disabled={busy} className="w-full rounded-lg bg-mc-gold py-2.5 text-sm font-bold text-mc-ink disabled:opacity-60">
+                  Enter portal
+                </button>
+              </form>
+            )}
+          </div>
         ) : (
           <form onSubmit={onLogin} className="space-y-3 border-t border-mc-line pt-4">
             <h2 className="text-sm font-bold text-mc-navy">
-              {demoMode ? 'Or pick from list' : intent === 'patient' ? 'Patient portal sign-in' : 'Staff / Admin sign-in'}
+              {demoMode ? 'Or pick from list' : 'Staff / Admin sign-in'}
             </h2>
             {!users.length ? (
-              <p className="text-sm text-mc-ink-soft">No accounts loaded. Is the API running on port 4000?</p>
+              <p className="text-sm text-mc-ink-soft">No staff accounts loaded. Check that the API is running on port 4000, then refresh.</p>
             ) : (
               <>
                 <label className="block text-xs font-semibold text-mc-ink-soft">User

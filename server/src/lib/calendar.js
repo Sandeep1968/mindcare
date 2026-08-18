@@ -35,6 +35,12 @@ function escapeIcs(text) {
     .replace(/\n/g, '\\n');
 }
 
+/** UID domain must match the sending mailbox (Gmail rejects mismatched organizer domains). */
+export function calendarUidDomain(email) {
+  const domain = String(email || '').split('@')[1];
+  return domain || 'gmail.com';
+}
+
 function foldLine(line) {
   if (line.length <= 75) return line;
   const parts = [];
@@ -70,7 +76,7 @@ export function buildAppointmentIcs({
   const tz = clinicTz();
   const dtStart = toIcsLocal(date, time);
   const dtEnd = toIcsLocal(end.date, end.time);
-  const uid = `${id}@mindcare.clinic`;
+  const uid = `${id}@${calendarUidDomain(organizerEmail)}`;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const status = method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED';
 

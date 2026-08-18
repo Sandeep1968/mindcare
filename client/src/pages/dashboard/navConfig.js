@@ -2,7 +2,7 @@
 export const NAV = [
   { id: 'dashboard', to: '/dashboard', end: true, label: 'Dashboard', icon: 'home' },
   { id: 'bookings', to: '/dashboard/appointments', label: 'Appointments', icon: 'inbox', badgeKey: 'newRequests' },
-  { id: 'patients', to: '/dashboard/patients', label: 'Clients', icon: 'users' },
+  { id: 'patients', to: '/dashboard/patients', label: 'Patients', icon: 'users' },
   {
     id: 'clinical',
     label: 'Clinical Care',
@@ -36,18 +36,29 @@ export function roleLabel(role) {
 
 export function pageMetaFromPath(pathname) {
   if (TITLES[pathname]) return { name: TITLES[pathname], route: pathname };
-  if (pathname.startsWith('/dashboard/patients/')) return { name: 'Client profile', route: pathname };
+  if (pathname.startsWith('/dashboard/patients/')) return { name: 'Patient chart', route: pathname };
   if (pathname.startsWith('/dashboard/clinical')) return { name: 'Clinical Care', route: pathname };
-  const last = pathname.split('/').filter(Boolean).pop() || 'dashboard';
+  if (pathname.startsWith('/assessments/')) return { name: 'Assessment', route: pathname };
+  if (pathname.startsWith('/guides/')) return { name: 'Guide', route: pathname };
+  const last = pathname.split('/').filter(Boolean).pop() || 'home';
   const name = last.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   return { name, route: pathname };
 }
 
 export const TITLES = {
+  '/': 'Home',
+  '/book': 'Book appointment',
+  '/therapy': 'Therapy',
+  '/groups': 'Support groups',
+  '/assessments': 'Assessments',
+  '/guides': 'Guides',
+  '/resources': 'Free resources',
+  '/community': 'Community',
+  '/partners': 'Partnerships',
   '/dashboard': 'Dashboard',
   '/dashboard/appointments': 'Appointments',
   '/dashboard/bookings': 'Website requests',
-  '/dashboard/patients': 'Clients',
+  '/dashboard/patients': 'Patients',
   '/dashboard/clinical/notes': 'Clinical Notes',
   '/dashboard/clinical/assessments': 'Assessments',
   '/dashboard/clinical/plans': 'Treatment Plans',
@@ -57,4 +68,6 @@ export const TITLES = {
   '/dashboard/billing': 'Billing',
   '/dashboard/reports': 'Reports',
   '/dashboard/settings': 'Settings',
+  '/dashboard/login': 'Sign in',
+  '/dashboard/portal': 'Patient portal',
 };

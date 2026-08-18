@@ -20,7 +20,8 @@ export default function DashboardLayout() {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
 
-  const notifications = useMemo(() => {
+  /* Notifications: read localStorage once on mount, not on every route change */
+  const [notifications, setNotifications] = useState(() => {
     try {
       const msgs = JSON.parse(localStorage.getItem('mindcare.demo.messages') || '[]');
       const unread = msgs.filter((m) => m.unread).slice(0, 3);
@@ -33,17 +34,18 @@ export default function DashboardLayout() {
       { id: 'n2', title: 'Clinical note', body: '2 notes need attention', to: '/dashboard/clinical/notes' },
       { id: 'n3', title: 'Message', body: 'Client replied in inbox', to: '/dashboard/communication' },
     ];
-  }, [location.pathname]);
+  });
 
   useEffect(() => {
     if (location.pathname.startsWith('/dashboard/clinical')) setClinicalOpen(true);
   }, [location.pathname]);
 
+  /* Badge: fetch once on mount only, not on every navigation */
   useEffect(() => {
     api('/dashboard/overview')
       .then((d) => setBadge(d.newRequests || 0))
       .catch(() => {});
-  }, [location.pathname]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setOpen(false);
@@ -51,6 +53,7 @@ export default function DashboardLayout() {
     setUserOpen(false);
   }, [location.pathname]);
 
+  /* Search: 300ms debounce — prevents API call on every keystroke */
   useEffect(() => {
     if (!search.trim()) {
       setResults([]);
@@ -58,31 +61,33 @@ export default function DashboardLayout() {
     }
     const q = search.trim().toLowerCase();
     let cancelled = false;
-    Promise.all([
-      api(`/patients?q=${encodeURIComponent(search)}`).catch(() => []),
-      api('/appointments?filter=upcoming').catch(() => []),
-    ]).then(([patients, appts]) => {
-      if (cancelled) return;
-      const pHits = (patients || []).slice(0, 5).map((p) => ({
-        type: 'patient',
-        id: p.id,
-        label: p.name,
-        sub: p.email || p.phone || 'Client',
-        to: `/dashboard/patients/${p.id}`,
-      }));
-      const aHits = (appts || [])
-        .filter((a) => (a.patientName || '').toLowerCase().includes(q) || (a.reason || '').toLowerCase().includes(q))
-        .slice(0, 5)
-        .map((a) => ({
-          type: 'appt',
-          id: a.id,
-          label: a.patientName,
-          sub: `${a.date} · ${a.time} · ${a.type}`,
-          to: '/dashboard/appointments',
+    const timer = setTimeout(() => {
+      Promise.all([
+        api(`/patients?q=${encodeURIComponent(search)}`).catch(() => []),
+        api('/appointments?filter=upcoming').catch(() => []),
+      ]).then(([patients, appts]) => {
+        if (cancelled) return;
+        const pHits = (patients || []).slice(0, 5).map((p) => ({
+          type: 'patient',
+          id: p.id,
+          label: p.name,
+          sub: p.email || p.phone || 'Client',
+          to: `/dashboard/patients/${p.id}`,
         }));
-      setResults([...pHits, ...aHits]);
-    });
-    return () => { cancelled = true; };
+        const aHits = (appts || [])
+          .filter((a) => (a.patientName || '').toLowerCase().includes(q) || (a.reason || '').toLowerCase().includes(q))
+          .slice(0, 5)
+          .map((a) => ({
+            type: 'appt',
+            id: a.id,
+            label: a.patientName,
+            sub: `${a.date} · ${a.time} · ${a.type}`,
+            to: '/dashboard/appointments',
+          }));
+        setResults([...pHits, ...aHits]);
+      });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [search]);
 
   useEffect(() => {
@@ -99,7 +104,7 @@ export default function DashboardLayout() {
   const title = useMemo(() => {
     const exact = TITLES[location.pathname];
     if (exact) return exact;
-    if (location.pathname.startsWith('/dashboard/patients')) return 'Clients';
+    if (location.pathname.startsWith('/dashboard/patients')) return 'Patients';
     return 'MindCare workspace';
   }, [location.pathname]);
 
@@ -211,7 +216,7 @@ export default function DashboardLayout() {
               id="dash-search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search clients, appointments…"
+              placeholder="Search patients, appointments…"
               className="w-full rounded-xl border border-[#e8ecf1] bg-[#f7f9fc] py-2.5 pl-3 pr-14 text-sm outline-none focus:border-mc-navy"
               aria-label="Search"
             />

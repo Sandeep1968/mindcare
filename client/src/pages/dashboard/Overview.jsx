@@ -25,17 +25,7 @@ import {
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { balanceDue, invoiceStatus, loadInvoices, loadInvoicesFromApi, money } from './clients/billingStore';
-
-function avatarColor(name = '') {
-  const colors = ['#003e7e', '#c48900', '#2f5d8c', '#8a6a1a', '#4279b0'];
-  let n = 0;
-  for (let i = 0; i < name.length; i += 1) n += name.charCodeAt(i);
-  return colors[n % colors.length];
-}
-
-function initials(name = '') {
-  return name.split(' ').map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
-}
+import { avatarColor, initials } from './clients/clientData';
 
 function formatDateLabel(iso) {
   const d = new Date(`${iso}T12:00:00`);
@@ -168,20 +158,24 @@ export default function Overview() {
   const [week, setWeek] = useState([]);
   const [error, setError] = useState('');
 
-  const notes = readLocal('mindcare.demo.notes', []);
-  const plans = readLocal('mindcare.demo.plans', []);
-  const messages = readLocal('mindcare.demo.messages', [
-    { id: '1', from: 'Alex Rivera', preview: 'Thank you! That was helpful.', unread: true, at: '10:24 AM' },
-    { id: '2', from: 'Jordan Blake', preview: 'Attached insurance card photos.', unread: true, at: 'Yesterday' },
-    { id: '3', from: 'Sam Ortiz', preview: 'Is the breathing exercise twice a day?', unread: true, at: 'Mon' },
-    { id: '4', from: 'Clinic system', preview: 'New virtual intake request.', unread: false, at: 'Sun' },
-  ]);
+  /* Read localStorage once on mount — not on every render */
+  const [localData] = useState(() => ({
+    notes: readLocal('mindcare.demo.notes', []),
+    plans: readLocal('mindcare.demo.plans', []),
+    messages: readLocal('mindcare.demo.messages', [
+      { id: '1', from: 'Alex Rivera', preview: 'Thank you! That was helpful.', unread: true, at: '10:24 AM' },
+      { id: '2', from: 'Jordan Blake', preview: 'Attached insurance card photos.', unread: true, at: 'Yesterday' },
+      { id: '3', from: 'Sam Ortiz', preview: 'Is the breathing exercise twice a day?', unread: true, at: 'Mon' },
+      { id: '4', from: 'Clinic system', preview: 'New virtual intake request.', unread: false, at: 'Sun' },
+    ]),
+  }));
+  const { notes, plans, messages } = localData;
 
   const load = useCallback(() => {
     api(`/dashboard/overview?date=${selectedDate}`)
       .then(setData)
       .catch((e) => setError(e.message));
-    api('/appointments?filter=all')
+    api('/appointments?filter=upcoming')
       .then((rows) => {
         const map = {};
         rows.forEach((a) => { map[a.date] = (map[a.date] || 0) + 1; });
@@ -216,6 +210,7 @@ export default function Overview() {
     if (treatmentReviews) items.push({ to: '/dashboard/clinical/plans', title: `${treatmentReviews} treatment plan review due`, Icon: ShieldCheck });
     if (data?.newRequests) items.push({ to: '/dashboard/bookings', title: `${data.newRequests} website booking${data.newRequests === 1 ? '' : 's'} to review`, Icon: CalendarCheck2 });
     if (unread) items.push({ to: '/dashboard/communication', title: `${unread} unread client messages`, Icon: Mail });
+    /* loadInvoices reads localStorage — only called when attention recomputes (data/unread changes) */
     const unpaid = loadInvoices().filter((i) => invoiceStatus(i) !== 'paid');
     unpaid.slice(0, 3).forEach((inv) => {
       items.push({

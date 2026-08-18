@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet } from 'react-router-dom';
 import BrandLogo from '../../components/BrandLogo';
 import SiteNav from '../../components/SiteNav';
+import BugReportButton from '../../components/BugReportButton';
 import AssessmentModal from '../../components/AssessmentModal';
 import { AssessmentProvider } from '../../assessment/AssessmentContext';
 
@@ -34,19 +35,22 @@ export default function PublicLayout() {
             <BrandLogo className="h-11 max-w-[190px] md:h-12 md:max-w-[210px]" />
           </Link>
           <SiteNav />
-          <div className="ml-auto hidden items-center gap-2 lg:flex">
-            <Link
-              to="/book"
-              className="rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold text-mc-navy transition hover:border-mc-navy/30"
-            >
-              Book now
-            </Link>
-            <Link
-              to="/book"
-              className="mc-btn-pulse rounded-full bg-mc-gold px-4 py-2 text-sm font-semibold text-mc-ink transition hover:bg-[#f0ae12]"
-            >
-              Find support
-            </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <BugReportButton />
+            <div className="hidden items-center gap-2 lg:flex">
+              <Link
+                to="/book"
+                className="rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold text-mc-navy transition hover:border-mc-navy/30"
+              >
+                Book now
+              </Link>
+              <Link
+                to="/book"
+                className="mc-btn-pulse rounded-full bg-mc-gold px-4 py-2 text-sm font-semibold text-mc-ink transition hover:bg-[#f0ae12]"
+              >
+                Find support
+              </Link>
+            </div>
           </div>
         </header>
 

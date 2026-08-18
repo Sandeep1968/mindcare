@@ -130,7 +130,9 @@ router.get('/', async (req, res) => {
   const q = (req.query.q || '').trim();
 
   if (!hasDatabase()) {
-    return res.json(applyFilters(allMapped(), { date, kind, status, filter, q }));
+    const payload = applyFilters(allMapped(), { date, kind, status, filter, q });
+    res.set('Cache-Control', 'private, max-age=15');
+    return res.json(payload);
   }
 
   let rows;
@@ -144,6 +146,7 @@ router.get('/', async (req, res) => {
       JOIN patients p ON p.id = a.patient_id ORDER BY a.appt_date DESC, a.appt_time DESC`;
   }
   const mapped = rows.map((a) => mapAppt({ ...a, status: a.status || 'confirmed' }, a.patient_name));
+  res.set('Cache-Control', 'private, max-age=15');
   res.json(applyFilters(mapped, { date: '', kind, status, filter: date ? 'all' : filter, q }));
 });
 

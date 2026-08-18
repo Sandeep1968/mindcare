@@ -79,17 +79,21 @@ router.get('/mine', async (req, res) => {
   }
 
   const rows = await sql`
-    SELECT i.*, p.name AS patient_name
-    FROM invoices i JOIN patients p ON p.id = i.patient_id
+    SELECT i.*, p.name AS patient_name,
+           pay.id AS pay_id, pay.amount AS pay_amount,
+           pay.paid_on AS pay_paid_on, pay.method AS pay_method
+    FROM invoices i
+    JOIN patients p ON p.id = i.patient_id
+    LEFT JOIN invoice_payments pay ON pay.invoice_id = i.id
     WHERE i.patient_id = ${pid} AND coalesce(i.status,'open') <> 'void'
-    ORDER BY i.invoice_date DESC
+    ORDER BY i.invoice_date DESC, pay.paid_on
   `;
-  const out = [];
+  const map = new Map();
   for (const row of rows) {
-    const payments = await sql`SELECT * FROM invoice_payments WHERE invoice_id = ${row.id} ORDER BY paid_on`;
-    out.push(mapInvoice({ ...row, payments }, row.patient_name));
+    if (!map.has(row.id)) map.set(row.id, { ...row, payments: [] });
+    if (row.pay_id) map.get(row.id).payments.push({ id: row.pay_id, amount: row.pay_amount, paid_on: row.pay_paid_on, method: row.pay_method });
   }
-  res.json(out);
+  res.json(Array.from(map.values()).map((row) => mapInvoice(row, row.patient_name)));
 });
 
 router.use(requireStaff);
@@ -113,17 +117,37 @@ async function listAllMapped() {
   if (!hasDatabase()) {
     return demoState.invoices.map((i) => mapInvoice(i, patientName(i.patient_id)));
   }
+  /* Single query: fetch all invoices + all their payments in one JOIN.
+     Rows are denormalized (one row per payment), so we group by invoice id. */
   const rows = await sql`
-    SELECT i.*, p.name AS patient_name
-    FROM invoices i JOIN patients p ON p.id = i.patient_id
-    ORDER BY i.invoice_date DESC, i.created_at DESC
+    SELECT
+      i.*,
+      p.name  AS patient_name,
+      pay.id  AS pay_id,
+      pay.amount AS pay_amount,
+      pay.paid_on AS pay_paid_on,
+      pay.method  AS pay_method
+    FROM invoices i
+    JOIN patients p ON p.id = i.patient_id
+    LEFT JOIN invoice_payments pay ON pay.invoice_id = i.id
+    ORDER BY i.invoice_date DESC, i.created_at DESC, pay.paid_on
   `;
-  const out = [];
+  /* Group payment rows back into their parent invoice */
+  const map = new Map();
   for (const row of rows) {
-    const payments = await sql`SELECT * FROM invoice_payments WHERE invoice_id = ${row.id} ORDER BY paid_on`;
-    out.push(mapInvoice({ ...row, payments }, row.patient_name));
+    if (!map.has(row.id)) {
+      map.set(row.id, { ...row, payments: [] });
+    }
+    if (row.pay_id) {
+      map.get(row.id).payments.push({
+        id: row.pay_id,
+        amount: row.pay_amount,
+        paid_on: row.pay_paid_on,
+        method: row.pay_method,
+      });
+    }
   }
-  return out;
+  return Array.from(map.values()).map((row) => mapInvoice(row, row.patient_name));
 }
 
 router.get('/invoices', async (req, res) => {
