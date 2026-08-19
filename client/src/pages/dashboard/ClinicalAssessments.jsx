@@ -2,42 +2,37 @@ import { useEffect, useState } from 'react';
 import { ASSESSMENTS } from '../../data/catalog';
 import { ModuleHeader } from './ModuleBits';
 import { api } from '../../lib/api';
-import { ASSIGNED_KEY } from '../portal/portalData';
 
 export default function ClinicalAssessments() {
   const [patients, setPatients] = useState([]);
   const [patientId, setPatientId] = useState('');
-  const [assigned, setAssigned] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(ASSIGNED_KEY) || '[]'); } catch { return []; }
-  });
+  const [assigned, setAssigned] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     api('/patients').then(setPatients).catch(() => setPatients([]));
+    api('/clinical/bundle').then((b) => setAssigned(b.assessments || [])).catch(() => setAssigned([]));
   }, []);
 
-  function persist(next) {
-    setAssigned(next);
-    localStorage.setItem(ASSIGNED_KEY, JSON.stringify(next));
-  }
-
-  function assign(id) {
+  async function assign(id) {
     const a = ASSESSMENTS.find((x) => x.id === id);
     const patient = patients.find((p) => p.id === patientId);
     if (!a || !patient) return;
-    persist([
-      {
-        id: crypto.randomUUID(),
-        assessmentId: a.id,
-        name: a.name,
-        cat: a.cat,
-        status: 'pending',
-        assignedAt: new Date().toISOString().slice(0, 10),
-        patientId: patient.id,
-        patientName: patient.name,
-        assignedBy: 'Dr. Sarah Williams',
-      },
-      ...assigned,
-    ]);
+    setError('');
+    try {
+      const row = await api('/clinical/assessments', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId: patient.id,
+          assessmentId: a.id,
+          name: a.name,
+          cat: a.cat,
+        }),
+      });
+      setAssigned((prev) => [row, ...prev]);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
@@ -57,6 +52,7 @@ export default function ClinicalAssessments() {
           {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
+      {error && <p className="mb-3 text-sm text-red-700">{error}</p>}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ASSESSMENTS.map((a) => (
           <article key={a.id} className="rounded-xl border border-mc-line bg-white p-4">

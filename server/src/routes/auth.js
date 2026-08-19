@@ -6,10 +6,12 @@ import { signToken, authRequired } from '../middleware/auth.js';
 import {
   hasDatabase,
   DEMO_USERS,
+  demoState,
   findDemoUser,
   publicDemoUser,
 } from '../demo.js';
 import { listPatientPortalUsers, ensurePatientPortalAccounts, setPatientPortalPassword } from '../lib/portalAccounts.js';
+import { peekInvite, issuePortalInvite } from '../lib/portalInvites.js';
 
 const router = Router();
 
@@ -113,10 +115,11 @@ router.post('/login', async (req, res) => {
 
 router.post('/portal-password', async (req, res) => {
   const schema = z.object({
-    email: z.string().email(),
-    dob: z.string().min(8),
+    email: z.string().email().optional(),
+    dob: z.string().min(8).optional(),
+    inviteToken: z.string().min(8).optional(),
     password: z.string().min(6, 'Password must be at least 6 characters'),
-  });
+  }).refine((d) => d.inviteToken || (d.email && d.dob), { message: 'Invite link, or email and date of birth, is required' });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     const first = parsed.error.issues?.[0];
@@ -132,6 +135,39 @@ router.post('/portal-password', async (req, res) => {
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message || 'Could not set portal password' });
   }
+});
+
+router.get('/invite/:token', async (req, res) => {
+  const found = await peekInvite(req.params.token);
+  if (!found) return res.json({ valid: false });
+  return res.json({
+    valid: true,
+    email: found.email,
+    name: found.name,
+    purpose: found.purpose,
+  });
+});
+
+router.post('/forgot-password', async (req, res) => {
+  const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter the email on your clinic record' });
+  const email = parsed.data.email.toLowerCase();
+  try {
+    let patient;
+    if (!hasDatabase()) {
+      patient = demoState.patients.find((p) => String(p.email || '').toLowerCase() === email);
+    } else {
+      const rows = await sql`SELECT * FROM patients WHERE lower(email) = ${email} LIMIT 1`;
+      patient = rows[0];
+    }
+    if (patient) await issuePortalInvite(patient, 'reset');
+  } catch (err) {
+    console.error('forgot-password', err);
+  }
+  return res.json({
+    ok: true,
+    message: 'If that email is on file, we sent a reset link. Without clinic email configured, ask the front desk to copy the link from your chart.',
+  });
 });
 
 router.post('/password', authRequired, async (req, res) => {

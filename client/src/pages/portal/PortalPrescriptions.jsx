@@ -3,8 +3,8 @@ import { medicationsFor } from './portalData';
 import { formatLongDate } from '../dashboard/clients/clientData';
 
 export default function PortalPrescriptions() {
-  const { user } = useOutletContext();
-  const meds = medicationsFor(user?.patientId);
+  const { me, user } = useOutletContext();
+  const meds = me?.medications || medicationsFor(user?.patientId);
   const current = meds.filter((m) => m.status === 'current');
   const previous = meds.filter((m) => m.status !== 'current');
 

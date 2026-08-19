@@ -70,4 +70,5 @@ export const TITLES = {
   '/dashboard/settings': 'Settings',
   '/dashboard/login': 'Sign in',
   '/dashboard/portal': 'Patient portal',
+  '/dashboard/portal/messages': 'My messages',
 };

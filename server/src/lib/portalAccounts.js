@@ -1,13 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { sql } from '../db.js';
-import {
-  hasDatabase,
-  DEMO_IDS,
-  DEMO_PASSWORD_PLAIN,
-  DEMO_USERS,
-  demoState,
-  newId,
-} from '../demo.js';
+import { hasDatabase, DEMO_IDS, DEMO_PASSWORD_PLAIN, DEMO_USERS, demoState, newId } from '../demo.js';
+import { peekInvite, consumeInvite } from './portalInvites.js';
 
 function publicRow(u) {
   return { id: u.id, name: u.name, role: u.role, email: u.email };
@@ -43,24 +37,58 @@ export async function listPatientPortalUsers() {
   return DEMO_USERS.filter((u) => u.role === 'patient').map(publicRow);
 }
 
-/** Patient sets (or replaces) their portal password after proving email + DOB. */
-export async function setPatientPortalPassword({ email, dob, password }) {
-  const em = String(email || '').trim().toLowerCase();
-  const wantDob = dobIso(dob);
-  if (!em || !wantDob || !password) {
-    throw httpError(400, 'Email, date of birth, and a password are required');
+/** Patient sets (or replaces) their portal password after proving email + DOB, or a valid invite token. */
+export async function setPatientPortalPassword({ email, dob, password, inviteToken }) {
+  const invite = inviteToken ? await peekInvite(inviteToken) : null;
+  if (inviteToken && !invite) {
+    throw httpError(401, 'This invite or reset link is invalid or expired.');
+  }
+
+  let patient;
+  if (invite) {
+    if (!hasDatabase()) {
+      patient = demoState.patients.find((p) => p.id === invite.patientId);
+    } else {
+      const rows = await sql`SELECT * FROM patients WHERE id = ${invite.patientId}`;
+      patient = rows[0];
+    }
+    if (!patient) throw httpError(404, 'Patient record not found for this invite.');
+  } else {
+    const em = String(email || '').trim().toLowerCase();
+    const wantDob = dobIso(dob);
+    if (!em || !wantDob || !password) {
+      throw httpError(400, 'Email, date of birth, and a password are required');
+    }
+    if (!hasDatabase()) {
+      patient = demoState.patients.find((p) => String(p.email || '').toLowerCase() === em);
+      if (!patient) {
+        throw httpError(404, 'No patient record for that email. Ask the clinic to add you first.');
+      }
+      if (!dobIso(patient.dob) || dobIso(patient.dob) !== wantDob) {
+        throw httpError(401, 'Date of birth does not match our record.');
+      }
+    } else {
+      const rows = await sql`SELECT * FROM patients WHERE lower(email) = ${em} LIMIT 1`;
+      patient = rows[0];
+      if (!patient) {
+        throw httpError(404, 'No patient record for that email. Ask the clinic to add you first.');
+      }
+      if (!dobIso(patient.dob) || dobIso(patient.dob) !== wantDob) {
+        throw httpError(401, 'Date of birth does not match our record.');
+      }
+    }
+  }
+
+  if (!password || String(password).length < 6) {
+    throw httpError(400, 'Password must be at least 6 characters');
   }
   const hash = await bcrypt.hash(password, 10);
+  const em = String(patient.email || email || '').trim().toLowerCase();
+  if (!em) throw httpError(400, 'Patient email is missing on the chart.');
 
+  let user;
   if (!hasDatabase()) {
-    const patient = demoState.patients.find((p) => String(p.email || '').toLowerCase() === em);
-    if (!patient) {
-      throw httpError(404, 'No patient record for that email. Ask the clinic to add you first.');
-    }
-    if (!dobIso(patient.dob) || dobIso(patient.dob) !== wantDob) {
-      throw httpError(401, 'Date of birth does not match our record.');
-    }
-    let user = DEMO_USERS.find(
+    user = DEMO_USERS.find(
       (u) => u.role === 'patient' && (u.email.toLowerCase() === em || u.patient_id === patient.id),
     );
     if (!user) {
@@ -79,42 +107,38 @@ export async function setPatientPortalPassword({ email, dob, password }) {
       user.email = em;
       user.name = patient.name;
     }
-    return user;
-  }
-
-  const [patient] = await sql`SELECT * FROM patients WHERE lower(email) = ${em} LIMIT 1`;
-  if (!patient) {
-    throw httpError(404, 'No patient record for that email. Ask the clinic to add you first.');
-  }
-  if (!dobIso(patient.dob) || dobIso(patient.dob) !== wantDob) {
-    throw httpError(401, 'Date of birth does not match our record.');
-  }
-
-  const [existing] = await sql`
-    SELECT * FROM users
-    WHERE lower(email) = ${em} OR patient_id = ${patient.id}
-    ORDER BY CASE WHEN role = 'patient' THEN 0 ELSE 1 END
-    LIMIT 1
-  `;
-  if (existing && existing.role !== 'patient') {
-    throw httpError(409, 'That email is already used by a staff account. Use a different email on your chart.');
-  }
-  if (existing) {
-    const [row] = await sql`
-      UPDATE users
-      SET password_hash = ${hash}, patient_id = ${patient.id}, name = ${patient.name}, email = ${em}
-      WHERE id = ${existing.id}
-      RETURNING *
+  } else {
+    const [existing] = await sql`
+      SELECT * FROM users
+      WHERE lower(email) = ${em} OR patient_id = ${patient.id}
+      ORDER BY CASE WHEN role = 'patient' THEN 0 ELSE 1 END
+      LIMIT 1
     `;
-    return row;
+    if (existing && existing.role !== 'patient') {
+      throw httpError(409, 'That email is already used by a staff account. Use a different email on your chart.');
+    }
+    if (existing) {
+      const [row] = await sql`
+        UPDATE users
+        SET password_hash = ${hash}, patient_id = ${patient.id}, name = ${patient.name}, email = ${em}
+        WHERE id = ${existing.id}
+        RETURNING *
+      `;
+      user = row;
+    } else {
+      const [row] = await sql`
+        INSERT INTO users (name, email, role, password_hash, patient_id)
+        VALUES (${patient.name}, ${em}, 'patient', ${hash}, ${patient.id})
+        RETURNING *
+      `;
+      user = row;
+    }
   }
 
-  const [row] = await sql`
-    INSERT INTO users (name, email, role, password_hash, patient_id)
-    VALUES (${patient.name}, ${em}, 'patient', ${hash}, ${patient.id})
-    RETURNING *
-  `;
-  return row;
+  if (inviteToken) {
+    await consumeInvite(inviteToken);
+  }
+  return user;
 }
 
 /**

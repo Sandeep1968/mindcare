@@ -8,6 +8,7 @@ import NavIcon from '../dashboard/NavIcon';
 
 export const PORTAL_NAV = [
   { to: '/dashboard/portal', end: true, label: 'Home', icon: 'home' },
+  { to: '/dashboard/portal/messages', label: 'My messages', icon: 'message' },
   { to: '/dashboard/portal/tracking', label: 'My tracking', icon: 'calendar' },
   { to: '/dashboard/portal/assessments', label: 'My assessments', icon: 'clinical' },
   { to: '/dashboard/portal/prescriptions', label: 'My prescriptions', icon: 'billing' },

@@ -12,6 +12,8 @@ import notificationRoutes from './routes/notifications.js';
 import bugRoutes from './routes/bugs.js';
 import settingsRoutes from './routes/settings.js';
 import portalRoutes from './routes/portal.js';
+import clinicalRoutes from './routes/clinical.js';
+import messageRoutes from './routes/messages.js';
 
 const app = express();
 export const hasDb = Boolean(process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('USER:PASSWORD'));
@@ -62,6 +64,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/bugs', bugRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/portal', portalRoutes);
+app.use('/api/clinical', clinicalRoutes);
+app.use('/api/messages', messageRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

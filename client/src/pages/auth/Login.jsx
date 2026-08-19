@@ -24,12 +24,15 @@ export default function Login() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const intent = params.get('intent') === 'patient' ? 'patient' : 'staff';
+  const inviteToken = params.get('invite') || params.get('reset') || '';
   const [needsSetup, setNeedsSetup] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [patientMode, setPatientMode] = useState('signin');
+  const [patientMode, setPatientMode] = useState(inviteToken ? 'create' : 'signin');
+  const [inviteInfo, setInviteInfo] = useState(null);
+  const [forgotMsg, setForgotMsg] = useState('');
   const [form, setForm] = useState({
     userId: '',
     password: intent === 'staff' ? DEMO_PASSWORD : '',
@@ -45,7 +48,11 @@ export default function Login() {
 
   useEffect(() => {
     setError('');
-    setPatientMode('signin');
+    setForgotMsg('');
+    if (!(intent === 'patient' && inviteToken)) {
+      setPatientMode('signin');
+      setInviteInfo(null);
+    }
     setForm((f) => ({
       ...f,
       userId: '',
@@ -66,7 +73,26 @@ export default function Login() {
     } else {
       setUsers([]);
     }
-  }, [intent]);
+  }, [intent, inviteToken]);
+
+  useEffect(() => {
+    if (intent !== 'patient' || !inviteToken) return;
+    setPatientMode('create');
+    api(`/auth/invite/${encodeURIComponent(inviteToken)}`)
+      .then((d) => {
+        if (!d.valid) {
+          setInviteInfo({ valid: false });
+          setError('This invite or reset link is invalid or expired. Create a password with email and date of birth, or ask the clinic for a new link.');
+          return;
+        }
+        setInviteInfo(d);
+        setForm((f) => ({ ...f, email: d.email || f.email, password: '', password2: '' }));
+      })
+      .catch(() => {
+        setInviteInfo({ valid: false });
+        setError('Could not check this invite link.');
+      });
+  }, [intent, inviteToken]);
 
   async function enterAs(userId, email) {
     setError('');
@@ -114,12 +140,30 @@ export default function Login() {
     }
     setBusy(true);
     try {
-      const u = await setupPortalPassword({
-        email: form.email,
-        dob: form.dob,
-        password: form.password,
-      });
+      const u = await setupPortalPassword(
+        inviteToken && inviteInfo?.valid
+          ? { inviteToken, password: form.password }
+          : { email: form.email, dob: form.dob, password: form.password },
+      );
       navigate(u.role === 'patient' ? '/dashboard/portal' : '/dashboard');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onForgot(e) {
+    e.preventDefault();
+    setError('');
+    setForgotMsg('');
+    setBusy(true);
+    try {
+      const data = await api('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: form.email }),
+      });
+      setForgotMsg(data.message || 'If that email is on file, we sent a reset link.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -236,28 +280,30 @@ export default function Login() {
           </form>
         ) : intent === 'patient' ? (
           <div className="space-y-3 border-t border-mc-line pt-4">
-            <div className="grid grid-cols-2 gap-1 rounded-lg bg-mc-cream p-1">
-              <button
-                type="button"
-                className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'signin' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
-                onClick={() => { setPatientMode('signin'); setError(''); }}
-              >
-                Sign in
-              </button>
-              <button
-                type="button"
-                className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'create' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
-                onClick={() => { setPatientMode('create'); setError(''); setForm({ ...form, password: '', password2: '' }); }}
-              >
-                Create password
-              </button>
-            </div>
+            {!inviteToken && (
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-mc-cream p-1">
+                <button
+                  type="button"
+                  className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'signin' || patientMode === 'forgot' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
+                  onClick={() => { setPatientMode('signin'); setError(''); setForgotMsg(''); }}
+                >
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-md py-1.5 text-xs font-bold ${patientMode === 'create' ? 'bg-white text-mc-navy shadow-sm' : 'text-mc-ink-soft'}`}
+                  onClick={() => { setPatientMode('create'); setError(''); setForgotMsg(''); setForm({ ...form, password: '', password2: '' }); }}
+                >
+                  Create password
+                </button>
+              </div>
+            )}
 
-            {patientMode === 'create' ? (
-              <form onSubmit={onCreatePassword} className="space-y-3">
-                <h2 className="text-sm font-bold text-mc-navy">Create your portal password</h2>
+            {patientMode === 'forgot' ? (
+              <form onSubmit={onForgot} className="space-y-3">
+                <h2 className="text-sm font-bold text-mc-navy">Forgot password</h2>
                 <p className="text-xs text-mc-ink-soft">
-                  Use the email and date of birth on your clinic record. This is how you choose your own password — the clinic does not set one for you.
+                  Enter the email on your clinic record. If we have it, we send a reset link (valid 24 hours). Without clinic email set up, ask the front desk to copy the link from your chart.
                 </p>
                 <label className="block text-xs font-semibold text-mc-ink-soft">Email
                   <input
@@ -270,15 +316,57 @@ export default function Login() {
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                   />
                 </label>
-                <label className="block text-xs font-semibold text-mc-ink-soft">Date of birth
-                  <input
-                    required
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
-                    value={form.dob}
-                    onChange={(e) => setForm({ ...form, dob: e.target.value })}
-                  />
-                </label>
+                {error && <p className="text-sm text-red-700">{error}</p>}
+                {forgotMsg && <p className="text-sm text-mc-navy">{forgotMsg}</p>}
+                <button disabled={busy} className="w-full rounded-lg bg-mc-gold py-2.5 text-sm font-bold text-mc-ink disabled:opacity-60">
+                  Send reset link
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-center text-xs font-semibold text-mc-navy underline"
+                  onClick={() => { setPatientMode('signin'); setForgotMsg(''); setError(''); }}
+                >
+                  Back to sign in
+                </button>
+              </form>
+            ) : patientMode === 'create' ? (
+              <form onSubmit={onCreatePassword} className="space-y-3">
+                <h2 className="text-sm font-bold text-mc-navy">
+                  {inviteInfo?.purpose === 'reset' ? 'Set a new portal password' : 'Create your portal password'}
+                </h2>
+                {inviteToken && inviteInfo?.valid ? (
+                  <p className="text-xs text-mc-ink-soft">
+                    Hello{inviteInfo.name ? ` ${inviteInfo.name}` : ''}. Choose a password for {inviteInfo.email}. This link expires after you save it.
+                  </p>
+                ) : (
+                  <p className="text-xs text-mc-ink-soft">
+                    Use the email and date of birth on your clinic record. This is how you choose your own password — the clinic does not set one for you.
+                  </p>
+                )}
+                {!(inviteToken && inviteInfo?.valid) && (
+                  <label className="block text-xs font-semibold text-mc-ink-soft">Email
+                    <input
+                      required
+                      type="email"
+                      autoComplete="username"
+                      className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                      value={form.email}
+                      placeholder="you@example.com"
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    />
+                  </label>
+                )}
+                {!(inviteToken && inviteInfo?.valid) && (
+                  <label className="block text-xs font-semibold text-mc-ink-soft">Date of birth
+                    <input
+                      required
+                      type="date"
+                      className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                      value={form.dob}
+                      onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                    />
+                  </label>
+                )}
                 <label className="block text-xs font-semibold text-mc-ink-soft">New password
                   <input
                     required
@@ -336,6 +424,13 @@ export default function Login() {
                 {error && <p className="text-sm text-red-700">{error}</p>}
                 <button disabled={busy} className="w-full rounded-lg bg-mc-gold py-2.5 text-sm font-bold text-mc-ink disabled:opacity-60">
                   Enter portal
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-center text-xs font-semibold text-mc-navy underline"
+                  onClick={() => { setPatientMode('forgot'); setError(''); setForgotMsg(''); }}
+                >
+                  Forgot password?
                 </button>
               </form>
             )}

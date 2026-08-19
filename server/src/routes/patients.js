@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { sql } from '../db.js';
 import { authRequired, requireStaff } from '../middleware/auth.js';
 import { hasDatabase, demoState, newId } from '../demo.js';
+import { chartForPatient, addNote } from '../lib/clinical.js';
+import { issuePortalInvite, portalStatus } from '../lib/portalInvites.js';
 
 const router = Router();
 
@@ -91,14 +93,37 @@ router.get('/:id', async (req, res) => {
     const patient = demoState.patients.find((p) => p.id === req.params.id);
     if (!patient) return res.status(404).json({ error: 'Not found' });
     const appointments = demoState.appointments.filter((a) => a.patient_id === patient.id);
-    return res.json({ ...normalizePatient(patient), records: [], appointments });
+    const chart = await chartForPatient(patient.id, patient.name);
+    return res.json({
+      ...normalizePatient(patient),
+      appointments,
+      records: chart.notes,
+      clinicalNotes: chart.notes,
+      plans: chart.plans,
+      forms: chart.forms,
+      medications: chart.medications,
+      assessments: chart.assessments,
+      adminNotes: chart.adminNotes,
+      portal: await portalStatus(patient.id),
+    });
   }
   await ensurePatientColumns();
   const [patient] = await sql`SELECT * FROM patients WHERE id = ${req.params.id}`;
   if (!patient) return res.status(404).json({ error: 'Not found' });
-  const records = await sql`SELECT * FROM clinical_records WHERE patient_id = ${patient.id} ORDER BY record_date DESC`;
   const appointments = await sql`SELECT * FROM appointments WHERE patient_id = ${patient.id} ORDER BY appt_date DESC, appt_time DESC`;
-  res.json({ ...normalizePatient(patient), records, appointments });
+  const chart = await chartForPatient(patient.id, patient.name);
+  res.json({
+    ...normalizePatient(patient),
+    appointments,
+    records: chart.notes,
+    clinicalNotes: chart.notes,
+    plans: chart.plans,
+    forms: chart.forms,
+    medications: chart.medications,
+    assessments: chart.assessments,
+    adminNotes: chart.adminNotes,
+    portal: await portalStatus(patient.id),
+  });
 });
 
 const patientBody = z.object({
@@ -178,7 +203,13 @@ router.post('/', async (req, res) => {
       created_at: new Date().toISOString(),
     };
     demoState.patients.push(row);
-    return res.status(201).json(row);
+    let portalInvite = null;
+    try {
+      portalInvite = await issuePortalInvite(row, 'invite');
+    } catch (err) {
+      console.error('portal invite', err);
+    }
+    return res.status(201).json({ ...normalizePatient(row), portalInvite });
   }
 
   const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM patients`;
@@ -197,7 +228,13 @@ router.post('/', async (req, res) => {
     )
     RETURNING *
   `;
-  res.status(201).json(row);
+  let portalInvite = null;
+  try {
+    portalInvite = await issuePortalInvite(row, 'invite');
+  } catch (err) {
+    console.error('portal invite', err);
+  }
+  res.status(201).json({ ...normalizePatient(row), portalInvite });
 });
 
 router.patch('/:id', async (req, res) => {
@@ -235,35 +272,61 @@ router.patch('/:id', async (req, res) => {
     return res.json(next);
   }
 
-  return res.status(501).json({ error: 'Patient updates require demo mode or schema migration' });
+  const [cur] = await sql`SELECT * FROM patients WHERE id = ${req.params.id}`;
+  if (!cur) return res.status(404).json({ error: 'Not found' });
+  const [row] = await sql`
+    UPDATE patients SET
+      status = ${d.status ?? cur.status},
+      notes = ${d.notes ?? cur.notes},
+      therapist = ${d.therapist ?? cur.therapist},
+      care_type = ${d.careType ?? cur.care_type},
+      visit_pref = ${d.visitPref ?? cur.visit_pref},
+      phone = ${d.phone ?? cur.phone},
+      email = ${d.email === undefined ? cur.email : (d.email || null)},
+      emergency = ${d.emergency ?? cur.emergency}
+    WHERE id = ${req.params.id}
+    RETURNING *
+  `;
+  res.json(normalizePatient(row));
+});
+
+router.post('/:id/portal-invite', async (req, res) => {
+  const purpose = req.body?.purpose === 'reset' ? 'reset' : 'invite';
+  let patient;
+  if (!hasDatabase()) {
+    patient = demoState.patients.find((p) => p.id === req.params.id);
+  } else {
+    const rows = await sql`SELECT * FROM patients WHERE id = ${req.params.id}`;
+    patient = rows[0];
+  }
+  if (!patient) return res.status(404).json({ error: 'Not found' });
+  try {
+    const invite = await issuePortalInvite(patient, purpose);
+    res.json(invite);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Could not create portal invite' });
+  }
 });
 
 router.post('/:id/records', async (req, res) => {
-  if (!hasDatabase()) {
-    return res.status(201).json({
-      id: newId(),
-      patient_id: req.params.id,
-      record_date: new Date().toISOString().slice(0, 10),
-      symptoms: req.body.symptoms || '',
-      diagnosis: req.body.diagnosis || '',
-      notes: req.body.notes || '',
-    });
-  }
   const schema = z.object({
     recordDate: z.string().optional(),
     symptoms: z.string().optional().default(''),
     diagnosis: z.string().optional().default(''),
     notes: z.string().optional().default(''),
+    body: z.string().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid record' });
   const d = parsed.data;
-  const [row] = await sql`
-    INSERT INTO clinical_records (patient_id, record_date, symptoms, diagnosis, notes)
-    VALUES (${req.params.id}, ${d.recordDate || new Date().toISOString().slice(0, 10)}, ${d.symptoms}, ${d.diagnosis}, ${d.notes})
-    RETURNING *
-  `;
-  res.status(201).json(row);
+  const note = await addNote({
+    patientId: req.params.id,
+    symptoms: d.symptoms,
+    diagnosis: d.diagnosis,
+    body: d.body || d.notes,
+    date: d.recordDate,
+  });
+  res.status(201).json(note);
 });
 
 export default router;

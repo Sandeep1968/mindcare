@@ -194,3 +194,94 @@ CREATE TABLE IF NOT EXISTS bug_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bug_reports_created ON bug_reports(created_at DESC);
+
+ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS note_type TEXT DEFAULT 'DAP';
+
+CREATE TABLE IF NOT EXISTS treatment_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  goal TEXT NOT NULL DEFAULT '',
+  focus TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  review_date DATE,
+  goals_json TEXT DEFAULT '[]',
+  created_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  updated_at DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+CREATE TABLE IF NOT EXISTS patient_forms (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  form_key TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Pending',
+  form_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  signed_name TEXT DEFAULT '',
+  signed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS medications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current',
+  start_date DATE,
+  end_date DATE,
+  provider TEXT DEFAULT '',
+  updated_at DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+CREATE TABLE IF NOT EXISTS assigned_assessments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  assessment_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  assigned_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  completed_at DATE,
+  assigned_by TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS admin_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  author TEXT DEFAULT '',
+  note_date DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+CREATE TABLE IF NOT EXISTS portal_invites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  token TEXT UNIQUE NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'invite',
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS message_threads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'general',
+  channel TEXT NOT NULL DEFAULT 'portal',
+  priority TEXT NOT NULL DEFAULT 'routine',
+  status TEXT NOT NULL DEFAULT 'unread',
+  assigned_to TEXT DEFAULT '',
+  last_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS message_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id UUID NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  direction TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'portal',
+  author TEXT NOT NULL DEFAULT '',
+  author_role TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

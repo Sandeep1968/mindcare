@@ -20,21 +20,23 @@ export default function DashboardLayout() {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
 
-  /* Notifications: read localStorage once on mount, not on every route change */
-  const [notifications, setNotifications] = useState(() => {
-    try {
-      const msgs = JSON.parse(localStorage.getItem('mindcare.demo.messages') || '[]');
-      const unread = msgs.filter((m) => m.unread).slice(0, 3);
-      if (unread.length) {
-        return unread.map((m) => ({ id: m.id, title: m.from, body: m.preview, to: '/dashboard/communication' }));
-      }
-    } catch { /* ignore */ }
-    return [
-      { id: 'n1', title: 'Website booking', body: 'New virtual intake to review', to: '/dashboard/bookings' },
-      { id: 'n2', title: 'Clinical note', body: '2 notes need attention', to: '/dashboard/clinical/notes' },
-      { id: 'n3', title: 'Message', body: 'Client replied in inbox', to: '/dashboard/communication' },
-    ];
-  });
+  /* Notifications: unread portal messages from the API */
+  const [notifications, setNotifications] = useState([
+    { id: 'n1', title: 'Website booking', body: 'New virtual intake to review', to: '/dashboard/bookings' },
+    { id: 'n2', title: 'Clinical note', body: '2 notes need attention', to: '/dashboard/clinical/notes' },
+  ]);
+
+  useEffect(() => {
+    api('/messages/unread-count')
+      .then((d) => {
+        if (!d.count) return;
+        setNotifications((cur) => [
+          { id: 'msg', title: 'Patient messages', body: `${d.count} unread in Communication`, to: '/dashboard/communication' },
+          ...cur.filter((n) => n.id !== 'msg'),
+        ]);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (location.pathname.startsWith('/dashboard/clinical')) setClinicalOpen(true);

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ModuleHeader } from './ModuleBits';
+import { api } from '../../lib/api';
 
 const LIBRARY = [
   { id: 'intake', name: 'New client intake', type: 'Form' },
@@ -8,26 +9,54 @@ const LIBRARY = [
   { id: 'telehealth', name: 'Telehealth agreement', type: 'Form' },
 ];
 
-const KEY = 'mindcare.demo.formsQueue';
-
 export default function FormsDocuments() {
-  const [queue, setQueue] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
-  });
+  const [patients, setPatients] = useState([]);
+  const [patientId, setPatientId] = useState('');
+  const [queue, setQueue] = useState([]);
+  const [error, setError] = useState('');
 
-  function send(formId) {
+  useEffect(() => {
+    api('/patients').then(setPatients).catch(() => []);
+    api('/clinical/bundle').then((b) => setQueue(b.forms || [])).catch(() => setQueue([]));
+  }, []);
+
+  async function send(formId) {
     const f = LIBRARY.find((x) => x.id === formId);
-    const next = [{ id: crypto.randomUUID(), form: f.name, status: 'pending', sent: new Date().toISOString().slice(0, 10) }, ...queue];
-    setQueue(next);
-    localStorage.setItem(KEY, JSON.stringify(next));
+    const patient = patients.find((p) => p.id === patientId);
+    if (!f || !patient) {
+      setError('Select a patient first.');
+      return;
+    }
+    setError('');
+    try {
+      const row = await api('/clinical/forms', {
+        method: 'POST',
+        body: JSON.stringify({ patientId: patient.id, name: f.name, formKey: f.id }),
+      });
+      setQueue((prev) => [row, ...prev]);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
     <div>
       <ModuleHeader
         title="Forms & Documents"
-        lead="Template library and outstanding forms queue for reception and therapists."
+        lead="Assign a template to a patient. It is stored on their chart and listed in the patient portal."
       />
+      <label className="mb-5 block max-w-md text-xs font-bold uppercase tracking-wide text-mc-navy">
+        Assign to patient
+        <select
+          className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm font-semibold"
+          value={patientId}
+          onChange={(e) => setPatientId(e.target.value)}
+        >
+          <option value="">— Select patient —</option>
+          {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      {error && <p className="mb-3 text-sm text-red-700">{error}</p>}
       <div className="mb-8 grid gap-3 sm:grid-cols-2">
         {LIBRARY.map((f) => (
           <article key={f.id} className="flex items-center justify-between rounded-xl border border-mc-line bg-white p-4">
@@ -49,8 +78,10 @@ export default function FormsDocuments() {
           queue.map((q) => (
             <div key={q.id} className="flex items-center justify-between border-b border-mc-line px-4 py-3 last:border-0">
               <div>
-                <div className="font-semibold">{q.form}</div>
-                <div className="text-xs text-mc-ink-soft">Sent {q.sent}</div>
+                <div className="font-semibold">{q.name || q.form}</div>
+                <div className="text-xs text-mc-ink-soft">
+                  {patients.find((p) => p.id === q.patientId)?.name || 'Patient'} · {q.date || q.sent}
+                </div>
               </div>
               <span className="rounded-full bg-mc-gold-soft px-2 py-0.5 text-xs font-bold text-mc-gold-deep">{q.status}</span>
             </div>

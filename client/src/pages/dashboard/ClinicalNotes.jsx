@@ -3,44 +3,43 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ModuleHeader, EmptyHint } from './ModuleBits';
 
-const KEY = 'mindcare.demo.notes';
-
 export default function ClinicalNotes() {
   const [patients, setPatients] = useState([]);
-  const [notes, setNotes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
-  });
+  const [notes, setNotes] = useState([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ patientId: '', symptoms: '', diagnosis: '', body: '' });
 
   useEffect(() => {
     api('/patients').then(setPatients).catch(() => {});
+    api('/clinical/bundle')
+      .then((b) => setNotes(b.notes || []))
+      .catch(() => setNotes([]));
   }, []);
 
-  function save(e) {
+  async function save(e) {
     e.preventDefault();
-    const patient = patients.find((p) => p.id === form.patientId);
-    const next = [
-      {
-        id: crypto.randomUUID(),
-        patientId: form.patientId,
-        patientName: patient?.name || 'Patient',
-        symptoms: form.symptoms,
-        diagnosis: form.diagnosis,
-        body: form.body,
-        date: new Date().toISOString().slice(0, 10),
-      },
-      ...notes,
-    ];
-    setNotes(next);
-    localStorage.setItem(KEY, JSON.stringify(next));
-    setForm({ patientId: '', symptoms: '', diagnosis: '', body: '' });
+    setError('');
+    setBusy(true);
+    try {
+      const row = await api('/clinical/notes', {
+        method: 'POST',
+        body: JSON.stringify(form),
+      });
+      setNotes((prev) => [row, ...prev]);
+      setForm({ patientId: '', symptoms: '', diagnosis: '', body: '' });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div>
       <ModuleHeader
         title="Clinical Notes"
-        lead="Session documentation across the caseload. Open a patient for full history, or add a note here."
+        lead="Session documentation across the caseload. Saved to the clinic record — not only this browser."
         action={<Link to="/dashboard/patients" className="text-sm font-bold text-mc-gold-deep">Patients →</Link>}
       />
 
@@ -55,7 +54,8 @@ export default function ClinicalNotes() {
         <input placeholder="Symptoms" className="rounded-lg border border-mc-line px-3 py-2 text-sm" value={form.symptoms} onChange={(e) => setForm({ ...form, symptoms: e.target.value })} />
         <input placeholder="Diagnosis / focus" className="rounded-lg border border-mc-line px-3 py-2 text-sm" value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} />
         <textarea required placeholder="Session note" className="min-h-24 rounded-lg border border-mc-line px-3 py-2 text-sm md:col-span-2" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
-        <button className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink md:col-span-2">Save clinical note</button>
+        {error && <p className="text-sm text-red-700 md:col-span-2">{error}</p>}
+        <button disabled={busy} className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink md:col-span-2 disabled:opacity-60">Save clinical note</button>
       </form>
 
       {!notes.length ? (

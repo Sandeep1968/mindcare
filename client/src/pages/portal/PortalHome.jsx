@@ -12,6 +12,7 @@ export default function PortalHome() {
   const patient = me?.patient;
   const [videos, setVideos] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [precheck, setPrecheck] = useState(null);
   const [checks, setChecks] = useState({ quiet: false, private: false, device: false });
   const [toast, setToast] = useState('');
@@ -19,6 +20,7 @@ export default function PortalHome() {
   useEffect(() => {
     api('/video/mine').then(setVideos).catch(() => setVideos([]));
     api('/billing/mine').then(setInvoices).catch(() => setInvoices([]));
+    api('/portal/messages').then((rows) => setMessages(Array.isArray(rows) ? rows : [])).catch(() => setMessages([]));
   }, []);
 
   const nextSession = useMemo(() => {
@@ -28,8 +30,9 @@ export default function PortalHome() {
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))[0] || null;
   }, [me]);
 
-  const pendingAssessments = assignedAssessmentsFor(user?.patientId).filter((a) => a.status === 'pending').length;
-  const currentMeds = medicationsFor(user?.patientId).filter((m) => m.status === 'current').length;
+  const waitingMessages = messages.filter((m) => m.fromCareTeam).length;
+  const pendingAssessments = (me?.assessments || assignedAssessmentsFor(user?.patientId)).filter((a) => a.status === 'pending').length;
+  const currentMeds = (me?.medications || medicationsFor(user?.patientId)).filter((m) => m.status === 'current').length;
   const balance = invoices.reduce((s, i) => s + balanceDue(i), 0);
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
@@ -48,8 +51,9 @@ export default function PortalHome() {
           Therapist: <strong className="text-mc-ink">{patient?.therapist || '—'}</strong>
           {patient?.primary_concern ? ` · ${patient.primary_concern}` : ''}
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Balance due" value={money(balance)} to="/dashboard/portal/billing" />
+          <Stat label="Messages from care team" value={String(waitingMessages)} to="/dashboard/portal/messages" />
           <Stat label="Assessments to complete" value={String(pendingAssessments)} to="/dashboard/portal/assessments" />
           <Stat label="Current prescriptions" value={String(currentMeds)} to="/dashboard/portal/prescriptions" />
         </div>

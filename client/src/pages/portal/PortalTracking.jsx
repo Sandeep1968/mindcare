@@ -10,7 +10,7 @@ export default function PortalTracking() {
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = (me.appointments || []).filter((a) => a.date >= today && !['cancelled', 'declined', 'completed', 'no-show'].includes(a.status));
   const past = (me.appointments || []).filter((a) => a.date < today || a.status === 'completed');
-  const plan = plansFor(patient.id, patient.name).find((p) => p.status === 'active');
+  const plan = (me.plans || plansFor(patient.id, patient.name)).find((p) => p.status === 'active');
 
   return (
     <div className="space-y-4">

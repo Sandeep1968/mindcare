@@ -13,11 +13,10 @@ import {
   attentionFlags,
   ageFromDob,
   canEditClients,
-  ensureClientDemoStores,
+  getBillingRows,
   formatShortDate,
   initials,
   lastVisit,
-  loadAttentionCaches,
   nextAppointment,
   outstandingBalance,
   statusLabel,
@@ -53,6 +52,7 @@ export default function Patients() {
   const [params] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [chartCache, setChartCache] = useState({ forms: [], plans: [] });
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [error, setError] = useState('');
@@ -75,13 +75,14 @@ export default function Patients() {
     setLoading(true);
     try {
       /* Fetch patients + appointments in parallel — no billing fetch here */
-      const [patients, appts] = await Promise.all([
+      const [patients, appts, bundle] = await Promise.all([
         api('/patients'),
         api('/appointments?filter=upcoming').catch(() => []),
+        api('/clinical/bundle').catch(() => ({ forms: [], plans: [] })),
       ]);
-      ensureClientDemoStores(patients);
       setRows(patients);
       setAppointments(appts);
+      setChartCache({ forms: bundle.forms || [], plans: bundle.plans || [] });
       setError('');
       const focus = params.get('focus');
       if (focus) navigate(`/dashboard/patients/${focus}`, { replace: true });
@@ -111,7 +112,7 @@ export default function Patients() {
 
   const enriched = useMemo(() => {
     /* Load localStorage caches once, share across all patients */
-    const caches = loadAttentionCaches();
+    const caches = { invoices: getBillingRows(), forms: chartCache.forms, plans: chartCache.plans };
     return rows.map((c) => {
       const last    = lastVisit(c, appointments);
       const next    = nextAppointment(c, appointments);
@@ -119,7 +120,7 @@ export default function Patients() {
       const flags   = attentionFlags(c, appointments, caches);
       return { ...c, last, next, balance, flags };
     });
-  }, [rows, appointments]);
+  }, [rows, appointments, chartCache]);
 
   const filtered = useMemo(() => {
     const needle = debouncedQ.trim().toLowerCase();
@@ -213,7 +214,9 @@ export default function Patients() {
       setForm(emptyForm);
       setAllowSimilar(false);
       await load();
-      navigate(`/dashboard/patients/${created.id}`);
+      navigate(`/dashboard/patients/${created.id}`, {
+        state: { portalInvite: created.portalInvite || null },
+      });
     } catch (err) {
       if (/already exists/i.test(err.message || '')) {
         setDupWarn(err.message || 'A patient with those contact details already exists.');
@@ -497,7 +500,7 @@ export default function Patients() {
             aria-labelledby="intake-title"
           >
             <h3 id="intake-title" className="text-lg font-bold text-mc-navy">New patient intake</h3>
-            <p className="mt-1 text-sm text-mc-ink-soft">Creates the patient record. Email is required to send appointment confirmations.</p>
+            <p className="mt-1 text-sm text-mc-ink-soft">Creates the patient record. Email is required for appointment confirmations and a patient-portal invite after save.</p>
 
             {error && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{error}</p>}
             {dupWarn && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{dupWarn}</p>}

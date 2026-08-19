@@ -1,116 +1,57 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ModuleHeader } from './ModuleBits';
-
-const KEY = 'mindcare.demo.messages.v2';
-const LEGACY_KEY = 'mindcare.demo.messages';
-
-const SEED = [
-  {
-    id: 'msg-1',
-    patientId: 'a2000002-0000-4000-8000-000000000001',
-    patientName: 'Alex Rivera',
-    contact: { email: 'alex.rivera@example.com', phone: '(415) 555-0126' },
-    subject: 'Running 5 minutes late',
-    category: 'scheduling',
-    channel: 'sms',
-    priority: 'routine',
-    status: 'unread',
-    assignedTo: 'Maya Chen',
-    lastAt: '2026-08-18T09:40:00',
-    thread: [
-      { id: 'e1', direction: 'inbound', channel: 'sms', at: '2026-08-18T09:40:00', author: 'Alex Rivera', text: 'Traffic on the bridge — still coming. I should be there in 5 minutes.' },
-    ],
-  },
-  {
-    id: 'msg-2',
-    patientId: 'a2000002-0000-4000-8000-000000000002',
-    patientName: 'Jordan Blake',
-    contact: { email: 'jordan.blake@example.com', phone: '(415) 555-0179' },
-    subject: 'Insurance card upload',
-    category: 'billing',
-    channel: 'portal',
-    priority: 'high',
-    status: 'follow_up',
-    assignedTo: 'Maya Chen',
-    lastAt: '2026-08-17T15:20:00',
-    thread: [
-      { id: 'e2', direction: 'inbound', channel: 'portal', at: '2026-08-17T15:20:00', author: 'Jordan Blake', text: 'Uploaded front/back of insurance card. Please confirm if anything else is needed.' },
-      { id: 'e3', direction: 'outbound', channel: 'portal', at: '2026-08-17T16:05:00', author: 'Maya Chen', text: 'Received. We are verifying benefits and will update you by tomorrow.' },
-    ],
-  },
-  {
-    id: 'msg-3',
-    patientId: 'a2000002-0000-4000-8000-000000000003',
-    patientName: 'Sam Ortiz',
-    contact: { email: 'sam.ortiz@example.com', phone: '(415) 555-0135' },
-    subject: 'Intake consent form pending signature',
-    category: 'forms',
-    channel: 'email',
-    priority: 'high',
-    status: 'open',
-    assignedTo: 'Maya Chen',
-    lastAt: '2026-08-16T11:05:00',
-    thread: [
-      { id: 'e4', direction: 'outbound', channel: 'email', at: '2026-08-16T11:05:00', author: 'MindCare Intake', text: 'Hi Sam, your intake consent packet is ready. Please sign before your first appointment.' },
-    ],
-  },
-];
+import { api } from '../../lib/api';
+import { useAuth } from '../../auth/AuthContext';
 
 const STATUS_OPTIONS = ['all', 'unread', 'open', 'follow_up', 'resolved', 'archived'];
-const CHANNEL_OPTIONS = ['all', 'email', 'sms', 'portal', 'call'];
+const CHANNEL_OPTIONS = ['all', 'portal', 'email', 'sms', 'call'];
+const CATEGORIES = ['general', 'scheduling', 'billing', 'forms'];
 
 export default function Communication() {
-  const [rows, setRows] = useState(() => {
-    try {
-      const v2 = localStorage.getItem(KEY);
-      if (v2) return JSON.parse(v2);
-      const legacy = localStorage.getItem(LEGACY_KEY);
-      if (legacy) {
-        const old = JSON.parse(legacy);
-        return old.map((m) => ({
-          id: `legacy-${m.id}`,
-          patientId: '',
-          patientName: m.from || 'Patient',
-          contact: { email: '', phone: '' },
-          subject: m.subject || 'Patient message',
-          category: 'general',
-          channel: 'portal',
-          priority: 'routine',
-          status: m.unread ? 'unread' : 'open',
-          assignedTo: 'Front Desk',
-          lastAt: new Date().toISOString(),
-          thread: [
-            {
-              id: `legacy-event-${m.id}`,
-              direction: 'inbound',
-              channel: 'portal',
-              at: new Date().toISOString(),
-              author: m.from || 'Patient',
-              text: m.preview || '',
-            },
-          ],
-        }));
-      }
-      return SEED;
-    } catch {
-      return SEED;
-    }
-  });
-  const [selectedId, setSelectedId] = useState(rows[0]?.id || '');
+  const { user } = useAuth();
+  const [params] = useSearchParams();
+  const focusPatient = params.get('patient') || '';
+  const [rows, setRows] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [reply, setReply] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [compose, setCompose] = useState(Boolean(focusPatient));
+  const [draft, setDraft] = useState({
+    patientId: focusPatient,
+    subject: '',
+    category: 'general',
+    priority: 'routine',
+    body: '',
+  });
 
-  function persist(next) {
-    setRows(next);
-    localStorage.setItem(KEY, JSON.stringify(next));
-  }
+  const load = useCallback(async () => {
+    try {
+      const list = await api('/messages');
+      setRows(Array.isArray(list) ? list : []);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Unable to load messages');
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api('/patients').then(setPatients).catch(() => setPatients([]));
+  }, []);
+  useEffect(() => {
+    if (focusPatient) setDraft((d) => ({ ...d, patientId: focusPatient }));
+  }, [focusPatient]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows
+      .filter((m) => (focusPatient ? m.patientId === focusPatient : true))
       .filter((m) => (statusFilter === 'all' ? true : m.status === statusFilter))
       .filter((m) => (channelFilter === 'all' ? true : m.channel === channelFilter))
       .filter((m) => {
@@ -126,55 +67,95 @@ export default function Communication() {
         return hay.includes(q);
       })
       .sort((a, b) => String(b.lastAt || '').localeCompare(String(a.lastAt || '')));
-  }, [rows, statusFilter, channelFilter, query]);
+  }, [rows, statusFilter, channelFilter, query, focusPatient]);
 
   const selected = filtered.find((m) => m.id === selectedId) || filtered[0] || null;
 
   const unread = rows.filter((r) => r.status === 'unread').length;
   const needsFollowUp = rows.filter((r) => r.status === 'follow_up' || (r.priority === 'high' && r.status !== 'resolved')).length;
 
-  function open(msg) {
+  async function open(msg) {
     setSelectedId(msg.id);
     if (msg.status !== 'unread') return;
-    const next = rows.map((r) => (r.id === msg.id ? { ...r, status: 'open' } : r));
-    persist(next);
+    try {
+      const next = await api(`/messages/${msg.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'open' }) });
+      setRows((cur) => cur.map((r) => (r.id === next.id ? next : r)));
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
-  function updateStatus(id, status) {
-    const next = rows.map((r) => (r.id === id ? { ...r, status, lastAt: new Date().toISOString() } : r));
-    persist(next);
+  async function updateStatus(id, status) {
+    try {
+      const next = await api(`/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      setRows((cur) => cur.map((r) => (r.id === next.id ? next : r)));
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
-  function sendReply() {
+  async function sendReply() {
     if (!selected || !reply.trim()) return;
-    const event = {
-      id: crypto.randomUUID(),
-      direction: 'outbound',
-      channel: selected.channel,
-      at: new Date().toISOString(),
-      author: 'Front Desk',
-      text: reply.trim(),
-    };
-    const next = rows.map((r) => (
-      r.id === selected.id
-        ? {
-          ...r,
-          status: 'resolved',
-          lastAt: event.at,
-          thread: [...(r.thread || []), event],
-        }
-        : r
-    ));
-    persist(next);
-    setReply('');
+    setBusy(true);
+    try {
+      const next = await api(`/messages/${selected.id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ body: reply.trim() }),
+      });
+      setRows((cur) => cur.map((r) => (r.id === next.id ? next : r)));
+      setReply('');
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendNew(e) {
+    e.preventDefault();
+    if (!draft.patientId || !draft.subject.trim() || !draft.body.trim()) return;
+    setBusy(true);
+    try {
+      const created = await api('/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId: draft.patientId,
+          subject: draft.subject.trim(),
+          body: draft.body.trim(),
+          category: draft.category,
+          priority: draft.priority,
+        }),
+      });
+      setRows((cur) => [created, ...cur.filter((r) => r.id !== created.id)]);
+      setSelectedId(created.id);
+      setCompose(false);
+      setDraft({ patientId: focusPatient, subject: '', category: 'general', priority: 'routine', body: '' });
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div>
       <ModuleHeader
         title="Communication"
-        lead={`Patient communication inbox — ${unread} unread and ${needsFollowUp} needing follow-up.`}
+        lead={`Secure portal inbox — ${unread} unread and ${needsFollowUp} needing follow-up. Replies appear in the patient portal. Email only notifies them that a message is waiting.`}
+        action={(
+          <button
+            type="button"
+            onClick={() => setCompose(true)}
+            className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink"
+          >
+            New message
+          </button>
+        )}
       />
+
+      {error && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
@@ -194,7 +175,7 @@ export default function Communication() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
         <div className="rounded-xl border border-mc-line bg-white shadow-sm">
           {!filtered.length && (
-            <p className="px-4 py-6 text-sm text-mc-ink-soft">No messages for current filters.</p>
+            <p className="px-4 py-6 text-sm text-mc-ink-soft">No messages yet. Send one, or wait for a patient to write from the portal.</p>
           )}
           {filtered.map((m) => (
             <button
@@ -267,14 +248,69 @@ export default function Communication() {
                 <button type="button" onClick={() => setReply('Thanks for the update. We have noted this in your chart.')} className="rounded-lg border border-mc-line px-2.5 py-1.5 text-xs font-semibold">
                   Insert template
                 </button>
-                <button type="button" onClick={sendReply} className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink">
+                <button type="button" disabled={busy} onClick={sendReply} className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink disabled:opacity-60">
                   Send reply
                 </button>
               </div>
+              <p className="mt-2 text-[11px] text-mc-ink-soft">
+                Signed in as {user?.name}. The patient will see this in My messages.
+              </p>
             </>
           )}
         </div>
       </div>
+
+      {compose && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-mc-ink/40 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setCompose(false); }}
+        >
+          <form onSubmit={sendNew} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-bold text-mc-navy">New portal message</h3>
+            <p className="mt-1 text-xs text-mc-ink-soft">The patient reads this in their portal. Email, if configured, only says a message is waiting.</p>
+            <label className="mt-3 block text-xs font-semibold text-mc-ink-soft">Patient
+              <select
+                required
+                className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                value={draft.patientId}
+                onChange={(e) => setDraft({ ...draft, patientId: e.target.value })}
+              >
+                <option value="">Select…</option>
+                {patients.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs font-semibold text-mc-ink-soft">Subject
+              <input required className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm" value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="block text-xs font-semibold text-mc-ink-soft">Topic
+                <select className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
+                  {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-semibold text-mc-ink-soft">Priority
+                <select className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm" value={draft.priority} onChange={(e) => setDraft({ ...draft, priority: e.target.value })}>
+                  <option value="routine">Routine</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+            <textarea
+              required
+              className="mt-3 min-h-28 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+              placeholder="Message for the patient…"
+              value={draft.body}
+              onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+            />
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => setCompose(false)} className="flex-1 rounded-xl border border-mc-line py-2 text-sm font-semibold">Cancel</button>
+              <button disabled={busy} className="flex-1 rounded-xl bg-mc-navy py-2 text-sm font-bold text-white disabled:opacity-60">Send</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

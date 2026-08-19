@@ -5,14 +5,15 @@
  * existing module rather than duplicating its UI here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
   CalendarDays,
   ClipboardList,
+  Copy,
   FileText,
-  Mail,
+  KeyRound,
   User,
   ShieldCheck,
 } from 'lucide-react';
@@ -25,17 +26,14 @@ import {
   canEditClients,
   canViewBilling,
   canViewClinical,
-  ensureClientDemoStores,
   formatLongDate,
   formatShortDate,
   formatTime,
   initials,
   nextAppointment,
   outstandingBalance,
-  readLocal,
   refreshBillingCache,
   statusLabel,
-  writeLocal,
 } from './clientData';
 import {
   balanceDue,
@@ -58,11 +56,13 @@ const TABS = [
 
 export default function Client360() {
   const { clientId } = useParams();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [portalInvite, setPortalInvite] = useState(location.state?.portalInvite || null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showNote, setShowNote] = useState(false);
@@ -84,7 +84,6 @@ export default function Client360() {
     setLoading(true);
     try {
       const d = await api(`/patients/${clientId}`);
-      ensureClientDemoStores([d]);
       setDetail(d);
       setError('');
       setTick((t) => t + 1);
@@ -112,41 +111,23 @@ export default function Client360() {
     .filter((a) => a.status === 'completed')
     .sort((a, b) => (b.appt_date || b.date || '').localeCompare(a.appt_date || a.date || ''));
 
-  const plans = useMemo(() => {
-    if (!detail) return [];
-    return readLocal('mindcare.demo.plans', []).filter(
-      (p) => p.patientId === detail.id || p.client === detail.name,
-    );
-  }, [detail, tick]);
-
+  const plans = detail?.plans || [];
   const activePlan = plans.find((p) => p.status === 'active');
-
-  const clinicalNotes = useMemo(() => {
-    if (!detail) return [];
-    return readLocal('mindcare.demo.notes', []).filter((n) => n.patientId === detail.id);
-  }, [detail, tick]);
-
-  const meds = useMemo(() => {
-    if (!detail) return [];
-    return readLocal('mindcare.demo.medications', []).filter((m) => m.patientId === detail.id);
-  }, [detail, tick]);
-
-  const forms = useMemo(() => {
-    if (!detail) return [];
-    return readLocal('mindcare.demo.clientForms', []).filter((f) => f.patientId === detail.id);
-  }, [detail, tick]);
-
+  const clinicalNotes = detail?.clinicalNotes || [];
+  const meds = detail?.medications || [];
+  const forms = detail?.forms || [];
   const adminNotes = useMemo(() => {
     if (!detail) return [];
-    const stored = readLocal('mindcare.demo.adminNotes', []).filter((n) => n.patientId === detail.id);
-    if (detail.notes) {
+    const stored = detail.adminNotes || [];
+    const profile = typeof detail.notes === 'string' ? detail.notes.trim() : '';
+    if (profile) {
       return [
-        { id: 'profile-note', text: detail.notes, date: (detail.care_started || detail.created_at || '').slice(0, 10), author: 'Profile' },
+        { id: 'profile-note', text: profile, date: (detail.care_started || detail.created_at || '').slice(0, 10), author: 'Profile' },
         ...stored,
       ];
     }
     return stored;
-  }, [detail, tick]);
+  }, [detail]);
 
   const bills = detail && billingOk ? billingForClient(detail) : [];
   const charges = bills.reduce((s, b) => s + Number(b.amount || 0), 0);
@@ -154,7 +135,15 @@ export default function Client360() {
 
   const journey = useMemo(() => {
     if (!detail) return [];
-    return buildCareJourney(detail, { appointments, role: user?.role });
+    return buildCareJourney(detail, {
+      appointments,
+      role: user?.role,
+      notes: clinicalNotes,
+      plans,
+      medications: meds,
+      forms,
+      adminNotes,
+    });
   }, [detail, appointments, user?.role, tick]);
 
   /* Patient-specific attention flags */
@@ -170,6 +159,7 @@ export default function Client360() {
       if (review <= soon) f.push({ key: 'plan', label: 'Care plan review due' });
     }
     if (balance > 0 && billingOk) f.push({ key: 'payment', label: `Balance $${balance.toFixed(0)}` });
+    if (detail && !detail.portal?.hasLogin) f.push({ key: 'portal', label: 'Patient portal not activated' });
     return f;
   }, [detail, forms, activePlan, balance, billingOk]);
 
@@ -192,17 +182,20 @@ export default function Client360() {
     } catch (e) { setError(e.message); }
   }
 
-  function saveAdminNote(e) {
+  async function saveAdminNote(e) {
     e.preventDefault();
     if (!noteText.trim() || !detail) return;
-    const all = readLocal('mindcare.demo.adminNotes', []);
-    writeLocal('mindcare.demo.adminNotes', [
-      { id: crypto.randomUUID(), patientId: detail.id, text: noteText.trim(), date: new Date().toISOString().slice(0, 10), author: user?.name || 'Staff' },
-      ...all,
-    ]);
-    setNoteText('');
-    setShowNote(false);
-    setTick((t) => t + 1);
+    try {
+      await api('/clinical/admin-notes', {
+        method: 'POST',
+        body: JSON.stringify({ patientId: detail.id, text: noteText.trim() }),
+      });
+      setNoteText('');
+      setShowNote(false);
+      await load();
+    } catch (e2) {
+      setError(e2.message);
+    }
   }
 
   const age = detail ? ageFromDob(detail.dob) : null;
@@ -381,6 +374,11 @@ export default function Client360() {
             journey={journey.slice(0, 6)}
             flags={flags}
             age={age}
+            canEdit={canEdit}
+            portalInvite={portalInvite}
+            onPortalInvite={setPortalInvite}
+            onError={setError}
+            onReload={load}
           />
         )}
         {tab === 'clinical' && clinical && (
@@ -408,7 +406,13 @@ export default function Client360() {
           <FormsTab forms={forms} />
         )}
         {tab === 'communication' && (
-          <CommunicationTab detail={detail} adminNotes={adminNotes} clinical={clinical} onAdd={() => setShowNote(true)} />
+          <CommunicationTab
+            detail={detail}
+            adminNotes={adminNotes}
+            clinical={clinical}
+            onAdd={() => setShowNote(true)}
+            canEdit={canEdit}
+          />
         )}
         {tab === 'billing' && billingOk && (
           <BillingTab detail={detail} bills={bills} balance={balance} charges={charges} paidTotal={paidTotal} />
@@ -455,7 +459,10 @@ export default function Client360() {
    OVERVIEW TAB
    Patient demographic record + care info + alerts + recent activity
 ───────────────────────────────────────────────────────── */
-function OverviewTab({ detail, next, activePlan, clinical, billingOk, balance, journey, flags, age }) {
+function OverviewTab({
+  detail, next, activePlan, clinical, billingOk, balance, journey, flags, age,
+  canEdit, portalInvite, onPortalInvite, onError, onReload,
+}) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
 
@@ -504,6 +511,15 @@ function OverviewTab({ detail, next, activePlan, clinical, billingOk, balance, j
           </dl>
         </div>
       </section>
+
+      <PortalAccessCard
+        detail={detail}
+        canEdit={canEdit}
+        invite={portalInvite}
+        onInvite={onPortalInvite}
+        onError={onError}
+        onReload={onReload}
+      />
 
       {/* Patient alerts — only what needs action */}
       {flags.length > 0 && (
@@ -566,9 +582,9 @@ function OverviewTab({ detail, next, activePlan, clinical, billingOk, balance, j
         ) : (
           <ul className="mt-3 space-y-3">
             {journey.map((e) => (
-              <li key={e.id} className="flex gap-3 text-sm">
-                <span className="w-14 shrink-0 text-xs font-semibold text-mc-ink-soft">{formatShortDate(e.date)}</span>
-                <div>
+              <li key={e.id} className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-x-3 text-sm">
+                <span className="pt-0.5 text-xs font-semibold tabular-nums text-mc-ink-soft">{formatShortDate(e.date)}</span>
+                <div className="min-w-0">
                   <div className="font-semibold text-mc-ink">{e.title}</div>
                   <div className="text-xs text-mc-ink-soft">{e.detail}</div>
                 </div>
@@ -877,43 +893,115 @@ function FormsTab({ forms }) {
    Patient-specific admin notes + link to Communication module.
    Does NOT rebuild the messaging system.
 ───────────────────────────────────────────────────────── */
-function CommunicationTab({ detail, adminNotes, clinical, onAdd }) {
+function CommunicationTab({ detail, adminNotes, onAdd, canEdit }) {
+  const [threads, setThreads] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadThreads = useCallback(async () => {
+    if (!detail?.id) return;
+    try {
+      const rows = await api(`/messages?patientId=${detail.id}`);
+      setThreads(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [detail?.id]);
+
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  async function send(e) {
+    e.preventDefault();
+    if (!canEdit || !subject.trim() || !body.trim()) return;
+    setBusy(true);
+    try {
+      await api('/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId: detail.id,
+          subject: subject.trim(),
+          body: body.trim(),
+          category: 'general',
+        }),
+      });
+      setSubject('');
+      setBody('');
+      setError('');
+      await loadThreads();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-mc-navy">Communication</h2>
-          <p className="text-xs text-mc-ink-soft">Administrative notes and links to the clinic inbox.</p>
+          <p className="text-xs text-mc-ink-soft">Portal messages with this patient. They reply under My messages.</p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={onAdd} className="rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink">
-            Add note
-          </button>
-          <Link
-            to="/dashboard/communication"
-            className="inline-flex items-center gap-1 rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold"
-          >
-            Open inbox <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </div>
-
-      {/* Link to send an email / message */}
-      <div className="mb-4 rounded-xl border border-mc-line bg-white p-4">
-        <p className="text-sm font-semibold text-mc-ink">Send communication to this patient</p>
-        <p className="mt-0.5 text-xs text-mc-ink-soft">
-          Use the Communication module to send messages and manage the patient inbox.
-        </p>
         <Link
-          to="/dashboard/communication"
-          className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-mc-navy underline"
+          to={`/dashboard/communication?patient=${detail.id}`}
+          className="inline-flex items-center gap-1 rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold"
         >
-          <Mail className="h-3.5 w-3.5" /> Open Communication <ArrowRight className="h-3.5 w-3.5" />
+          Open inbox <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
 
-      {/* Administrative notes */}
-      <h3 className="mb-3 font-bold text-mc-navy">Administrative notes</h3>
+      {error && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+
+      {canEdit && (
+        <form onSubmit={send} className="mb-4 rounded-xl border border-mc-line bg-white p-4">
+          <p className="text-sm font-semibold text-mc-ink">Send a portal message</p>
+          <input
+            required
+            className="mt-2 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+            placeholder="Subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
+          <textarea
+            required
+            className="mt-2 min-h-20 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+            placeholder="Message the patient will see in their portal…"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <button disabled={busy} className="mt-2 rounded-lg bg-mc-gold px-3 py-2 text-sm font-bold text-mc-ink disabled:opacity-60">
+            Send to portal
+          </button>
+        </form>
+      )}
+
+      <h3 className="mb-3 font-bold text-mc-navy">Threads</h3>
+      {!threads.length ? (
+        <p className="mb-6 rounded-xl border border-dashed border-mc-line bg-white p-6 text-center text-sm text-mc-ink-soft">
+          No portal messages with this patient yet.
+        </p>
+      ) : (
+        <div className="mb-6 space-y-3">
+          {threads.map((t) => (
+            <article key={t.id} className="rounded-xl border border-mc-line bg-white p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-mc-navy">{t.subject}</p>
+                <span className="text-[11px] text-mc-ink-soft">{t.status}</span>
+              </div>
+              <p className="mt-1 text-sm text-mc-ink-soft">{t.thread?.[t.thread.length - 1]?.text}</p>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-bold text-mc-navy">Administrative notes</h3>
+        <button type="button" onClick={onAdd} className="rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold">
+          Add note
+        </button>
+      </div>
       <p className="mb-3 text-xs text-mc-ink-soft">
         Patient-specific administrative notes. Clinical session documentation lives in{' '}
         <Link to="/dashboard/clinical/notes" className="font-semibold underline">Clinical Notes</Link>.
@@ -1004,6 +1092,97 @@ function BillingTab({ detail, bills, balance, charges, paidTotal }) {
 }
 
 /* ── Shared helpers ── */
+
+function PortalAccessCard({ detail, canEdit, invite, onInvite, onError, onReload }) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const hasLogin = Boolean(detail.portal?.hasLogin);
+
+  async function copyLink(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      onError?.('Could not copy the link. Select it and copy manually.');
+    }
+  }
+
+  async function issue(purpose) {
+    if (!canEdit || !detail?.id) return;
+    setBusy(true);
+    onError?.('');
+    try {
+      const next = await api(`/patients/${detail.id}/portal-invite`, {
+        method: 'POST',
+        body: JSON.stringify({ purpose }),
+      });
+      onInvite?.(next);
+      await onReload?.();
+    } catch (err) {
+      onError?.(err.message || 'Could not create a portal invite');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-mc-line bg-white p-5 lg:col-span-2">
+      <SectionHeading icon={KeyRound} title="Patient portal" />
+      <p className="mt-2 text-sm text-mc-ink-soft">
+        {hasLogin
+          ? 'This patient has already created a portal password.'
+          : 'The clinic does not set a password. Send an invite (or copy the link) so they can choose one.'}
+      </p>
+      {invite?.inviteUrl && (
+        <div className="mt-3 rounded-lg border border-mc-gold/40 bg-mc-gold-soft px-3 py-3">
+          <p className="text-xs font-semibold text-mc-ink">
+            {invite.purpose === 'reset' ? 'Password reset link' : 'Portal invite link'}
+            {invite.emailed
+              ? invite.smtp
+                ? ' — emailed to the address on file.'
+                : ' — stored in the demo email outbox (SMTP is not configured).'
+              : ' — email was not sent. Copy this link for the patient.'}
+          </p>
+          <p className="mt-1 break-all font-mono text-[11px] text-mc-ink">{invite.inviteUrl}</p>
+          <button
+            type="button"
+            onClick={() => copyLink(invite.inviteUrl)}
+            className="mt-2 inline-flex items-center gap-1 rounded-lg border border-mc-line bg-white px-2.5 py-1.5 text-xs font-bold text-mc-navy"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      )}
+      {canEdit && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !detail.email}
+            onClick={() => issue('invite')}
+            className="rounded-lg bg-mc-navy px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {hasLogin ? 'Send a new invite' : 'Send portal invite'}
+          </button>
+          {hasLogin && (
+            <button
+              type="button"
+              disabled={busy || !detail.email}
+              onClick={() => issue('reset')}
+              className="rounded-lg border border-mc-line bg-white px-3 py-2 text-sm font-semibold text-mc-navy disabled:opacity-50"
+            >
+              Send password reset
+            </button>
+          )}
+        </div>
+      )}
+      {!detail.email && (
+        <p className="mt-2 text-xs text-rose-800">Add an email on the chart before sending a portal invite.</p>
+      )}
+    </section>
+  );
+}
 
 function SectionHeading({ icon: Icon, title }) {
   return (

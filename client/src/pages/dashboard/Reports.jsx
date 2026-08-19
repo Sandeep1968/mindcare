@@ -4,9 +4,7 @@ import { ModuleHeader } from './ModuleBits';
 import BrandLogo from '../../components/BrandLogo';
 import {
   ageFromDob,
-  ensureClientDemoStores,
   formatTime,
-  readLocal,
 } from './clients/clientData';
 import {
   balanceDue,
@@ -28,7 +26,6 @@ export default function Reports() {
   useEffect(() => {
     api('/patients')
       .then((rows) => {
-        ensureClientDemoStores(rows);
         setPatients(rows);
       })
       .catch((e) => setError(e.message || 'Unable to load patients.'));
@@ -219,20 +216,19 @@ function ReportTable({ cols, rows, empty }) {
 
 function buildReport(detail, invoices) {
   const age = ageFromDob(detail.dob);
-  const notes = readLocal('mindcare.demo.notes', []).filter((n) => n.patientId === detail.id);
+  const notes = (detail.clinicalNotes || []).map((n) => ({
+    date: formatReportDate(n.date),
+    symptoms: n.symptoms || n.type || '—',
+    diagnosis: n.diagnosis || '—',
+    notes: n.body || n.notes || '—',
+  }));
   const records = (detail.records || []).map((r) => ({
     date: formatReportDate(r.record_date || r.date),
     symptoms: r.symptoms || '—',
     diagnosis: r.diagnosis || '—',
     notes: r.notes || r.body || '—',
   }));
-  const fromLocal = notes.map((n) => ({
-    date: formatReportDate(n.date),
-    symptoms: n.symptoms || n.type || '—',
-    diagnosis: n.diagnosis || '—',
-    notes: n.body || n.notes || '—',
-  }));
-  const clinical = records.length ? records : fromLocal;
+  const clinical = notes.length ? notes : records;
 
   const visits = (detail.appointments || [])
     .slice()

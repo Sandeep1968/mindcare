@@ -72,17 +72,26 @@ export function ageFromDob(dob) {
   return age;
 }
 
+function parseChartDate(iso) {
+  if (!iso) return null;
+  const raw = String(iso);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return new Date(`${match[1]}T12:00:00`);
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function formatShortDate(iso) {
   if (!iso) return '—';
-  const d = new Date(`${iso}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseChartDate(iso);
+  if (!d) return String(iso).slice(0, 10);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function formatLongDate(iso) {
   if (!iso) return '—';
-  const d = new Date(`${iso}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseChartDate(iso);
+  if (!d) return String(iso).slice(0, 10);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -337,7 +346,7 @@ export function inLastVisitRange(dateIso, range) {
   return true;
 }
 
-export function buildCareJourney(client, { appointments = [], role }) {
+export function buildCareJourney(client, { appointments = [], role, notes = [], plans = [], medications = [], forms = [], adminNotes = [] }) {
   const events = [];
   const clinical = canViewClinical(role);
   const billing = canViewBilling(role);
@@ -369,58 +378,42 @@ export function buildCareJourney(client, { appointments = [], role }) {
     });
 
   if (clinical) {
-    readLocal('mindcare.demo.notes', [])
-      .filter((n) => n.patientId === client.id)
-      .forEach((n) => {
-        events.push({
-          id: `note-${n.id}`,
-          date: n.date,
-          category: 'sessions',
-          title: 'Clinical Note',
-          detail: n.diagnosis || n.type || 'Session documentation',
-          href: '/dashboard/clinical/notes',
-        });
+    notes.forEach((n) => {
+      events.push({
+        id: `note-${n.id}`,
+        date: n.date,
+        category: 'sessions',
+        title: 'Clinical Note',
+        detail: n.diagnosis || n.type || 'Session documentation',
+        href: '/dashboard/clinical/notes',
       });
+    });
 
-    readLocal('mindcare.demo.plans', [])
-      .filter((p) => p.patientId === client.id || p.client === client.name)
-      .forEach((p) => {
-        events.push({
-          id: `plan-${p.id}`,
-          date: p.created || p.updated,
-          category: 'plans',
-          title: 'Treatment Plan',
-          detail: p.status === 'active' ? 'Treatment plan created' : 'Treatment plan updated',
-          href: '/dashboard/clinical/plans',
-        });
-        if (p.updated && p.updated !== p.created) {
-          events.push({
-            id: `plan-u-${p.id}`,
-            date: p.updated,
-            category: 'plans',
-            title: 'Treatment Plan Updated',
-            detail: p.goal || 'Goals reviewed',
-            href: '/dashboard/clinical/plans',
-          });
-        }
+    plans.forEach((p) => {
+      events.push({
+        id: `plan-${p.id}`,
+        date: p.created || p.updated,
+        category: 'plans',
+        title: 'Treatment Plan',
+        detail: p.status === 'active' ? 'Treatment plan created' : 'Treatment plan updated',
+        href: '/dashboard/clinical/plans',
       });
+    });
 
-    readLocal('mindcare.demo.medications', [])
-      .filter((m) => m.patientId === client.id)
-      .forEach((m) => {
-        events.push({
-          id: `med-${m.id}`,
-          date: m.updated || m.start,
-          category: 'medications',
-          title: 'Medication Record',
-          detail: 'Medication information updated',
-          href: null,
-        });
+    medications.forEach((m) => {
+      events.push({
+        id: `med-${m.id}`,
+        date: m.updated || m.start,
+        category: 'medications',
+        title: 'Medication Record',
+        detail: 'Medication information updated',
+        href: null,
       });
+    });
   }
 
-  readLocal('mindcare.demo.clientForms', [])
-    .filter((f) => f.patientId === client.id && f.status === 'Completed')
+  forms
+    .filter((f) => f.status === 'Completed')
     .forEach((f) => {
       events.push({
         id: `form-${f.id}`,
@@ -446,18 +439,16 @@ export function buildCareJourney(client, { appointments = [], role }) {
     });
   }
 
-  readLocal('mindcare.demo.adminNotes', [])
-    .filter((n) => n.patientId === client.id)
-    .forEach((n) => {
-      events.push({
-        id: `admin-${n.id}`,
-        date: n.date,
-        category: 'notes',
-        title: 'Administrative Note',
-        detail: n.text,
-        href: null,
-      });
+  adminNotes.forEach((n) => {
+    events.push({
+      id: `admin-${n.id}`,
+      date: n.date,
+      category: 'notes',
+      title: 'Administrative Note',
+      detail: n.text,
+      href: null,
     });
+  });
 
   return events
     .filter((e) => e.date)

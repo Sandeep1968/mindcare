@@ -2,8 +2,8 @@ import { useOutletContext } from 'react-router-dom';
 import { assignedAssessmentsFor } from './portalData';
 
 export default function PortalAssessments() {
-  const { user } = useOutletContext();
-  const rows = assignedAssessmentsFor(user?.patientId);
+  const { me, user } = useOutletContext();
+  const rows = me?.assessments || assignedAssessmentsFor(user?.patientId);
 
   return (
     <div className="rounded-2xl border border-mc-line bg-white p-5 shadow-sm">

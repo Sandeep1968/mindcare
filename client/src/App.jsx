@@ -33,6 +33,7 @@ import PortalAssessments from './pages/portal/PortalAssessments';
 import PortalPrescriptions from './pages/portal/PortalPrescriptions';
 import PortalDocuments from './pages/portal/PortalDocuments';
 import PortalBilling from './pages/portal/PortalBilling';
+import PortalMessages from './pages/portal/PortalMessages';
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="prescriptions" element={<PortalPrescriptions />} />
             <Route path="documents" element={<PortalDocuments />} />
             <Route path="billing" element={<PortalBilling />} />
+            <Route path="messages" element={<PortalMessages />} />
           </Route>
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />

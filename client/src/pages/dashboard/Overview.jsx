@@ -32,6 +32,13 @@ function formatDateLabel(iso) {
   return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+function messageWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function StatCard({ icon: Icon, label, value, hint, tone }) {
   const tones = {
     amber: { wrap: 'from-[#fff6e8] to-[#ffe8c8] border-[#f0d6a0]', icon: 'bg-[#ffb81c]/25 text-[#9a6b00]' },
@@ -142,15 +149,6 @@ function DatePicker({ value, onChange }) {
   );
 }
 
-function readLocal(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export default function Overview() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -158,18 +156,18 @@ export default function Overview() {
   const [week, setWeek] = useState([]);
   const [error, setError] = useState('');
 
-  /* Read localStorage once on mount — not on every render */
-  const [localData] = useState(() => ({
-    notes: readLocal('mindcare.demo.notes', []),
-    plans: readLocal('mindcare.demo.plans', []),
-    messages: readLocal('mindcare.demo.messages', [
-      { id: '1', from: 'Alex Rivera', preview: 'Thank you! That was helpful.', unread: true, at: '10:24 AM' },
-      { id: '2', from: 'Jordan Blake', preview: 'Attached insurance card photos.', unread: true, at: 'Yesterday' },
-      { id: '3', from: 'Sam Ortiz', preview: 'Is the breathing exercise twice a day?', unread: true, at: 'Mon' },
-      { id: '4', from: 'Clinic system', preview: 'New virtual intake request.', unread: false, at: 'Sun' },
-    ]),
-  }));
-  const { notes, plans, messages } = localData;
+  const [localData, setLocalData] = useState({ notes: [], plans: [] });
+  const [messages, setMessages] = useState([]);
+
+  useEffect(() => {
+    api('/clinical/bundle')
+      .then((b) => setLocalData({ notes: b.notes || [], plans: b.plans || [] }))
+      .catch(() => {});
+    api('/messages')
+      .then((rows) => setMessages(Array.isArray(rows) ? rows : []))
+      .catch(() => setMessages([]));
+  }, []);
+  const { notes, plans } = localData;
 
   const load = useCallback(() => {
     api(`/dashboard/overview?date=${selectedDate}`)
@@ -199,10 +197,10 @@ export default function Overview() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadInvoicesFromApi().catch(() => {}); }, []);
 
-  const pendingNotes = notes.length ? Math.min(notes.length, 2) : 2;
+  const pendingNotes = notes.length;
   const followUps = 3;
-  const treatmentReviews = plans.filter((p) => p.status === 'active').length || 1;
-  const unread = messages.filter((m) => m.unread).length;
+  const treatmentReviews = plans.filter((p) => p.status === 'active').length;
+  const unread = messages.filter((m) => m.status === 'unread').length;
 
   const attention = useMemo(() => {
     const items = [];
@@ -359,19 +357,22 @@ export default function Overview() {
             <ul className="space-y-3">
               {messages.slice(0, 4).map((m) => (
                 <li key={m.id} className="flex gap-3">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: avatarColor(m.from) }}>
-                    {initials(m.from)}
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: avatarColor(m.patientName) }}>
+                    {initials(m.patientName)}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`truncate text-[13px] ${m.unread ? 'font-bold text-mc-navy' : 'font-semibold text-mc-ink'}`}>{m.from}</span>
-                      <span className="shrink-0 text-[11px] text-mc-ink-soft">{m.at}</span>
+                      <span className={`truncate text-[13px] ${m.status === 'unread' ? 'font-bold text-mc-navy' : 'font-semibold text-mc-ink'}`}>{m.patientName}</span>
+                      <span className="shrink-0 text-[11px] text-mc-ink-soft">{messageWhen(m.lastAt)}</span>
                     </div>
-                    <p className="truncate text-[12px] text-mc-ink-soft">{m.preview}</p>
+                    <p className="truncate text-[12px] text-mc-ink-soft">{m.thread?.[m.thread.length - 1]?.text || m.subject}</p>
                   </div>
-                  {m.unread && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-mc-navy" />}
+                  {m.status === 'unread' && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-mc-navy" />}
                 </li>
               ))}
+              {!messages.length && (
+                <li className="text-sm text-mc-ink-soft">No portal messages yet.</li>
+              )}
             </ul>
           </section>
         </div>

@@ -1,20 +1,65 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import BrandLogo from '../../components/BrandLogo';
+import { api } from '../../lib/api';
 import { formsFor } from './portalData';
 import { ageFromDob, formatLongDate } from '../dashboard/clients/clientData';
 import { balanceDue, fetchMyInvoices, invoiceStatus, money, paidAmount, statusLabel } from '../dashboard/clients/billingStore';
 
+const FORM_COPY = {
+  intake: 'I confirm that the intake information I provided to the clinic is accurate and complete to the best of my knowledge.',
+  consent: 'I consent to receive mental health services from this clinic. I understand the nature of therapy, limits of confidentiality, and my rights as a patient.',
+  hipaa: 'I acknowledge that I have received the clinic HIPAA Notice of Privacy Practices.',
+  telehealth: 'I agree to participate in telehealth sessions and understand the limits of remote care, including privacy on my side of the connection.',
+};
+
 export default function PortalDocuments() {
   const { me, user } = useOutletContext();
   const [invoices, setInvoices] = useState([]);
-  const forms = formsFor(user?.patientId);
+  const [forms, setForms] = useState([]);
+  const [signing, setSigning] = useState(null);
+  const [signedName, setSignedName] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchMyInvoices().then(setInvoices).catch(() => setInvoices([]));
   }, []);
 
+  useEffect(() => {
+    setForms(me?.forms || formsFor(user?.patientId));
+  }, [me, user?.patientId]);
+
+  useEffect(() => {
+    if (signing) {
+      setSignedName(user?.name || me?.patient?.name || '');
+      setAgreed(false);
+      setError('');
+    }
+  }, [signing, user?.name, me?.patient?.name]);
+
   const report = useMemo(() => (me?.patient ? buildOwnReport(me, invoices) : null), [me, invoices]);
+  const pending = forms.filter((f) => f.status === 'Pending' || f.status === 'Needs Review');
+
+  async function submitSign(e) {
+    e.preventDefault();
+    if (!signing || !signedName.trim() || !agreed) return;
+    setBusy(true);
+    setError('');
+    try {
+      const row = await api(`/portal/forms/${signing.id}/sign`, {
+        method: 'POST',
+        body: JSON.stringify({ signedName: signedName.trim(), agreed: true }),
+      });
+      setForms((cur) => cur.map((f) => (f.id === row.id ? row : f)));
+      setSigning(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!me) return <p className="text-sm text-mc-ink-soft">Loading…</p>;
 
@@ -81,31 +126,12 @@ export default function PortalDocuments() {
             </table>
           )}
           <h3 className="mb-3 mt-6 text-xs font-bold uppercase tracking-[0.14em] text-mc-gold-deep">Billing summary</h3>
-          {!report.bills.length ? (
-            <p className="text-sm text-mc-ink-soft">No invoices on file.</p>
-          ) : (
-            <>
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="bg-[#eef5fc] text-[11px] font-bold uppercase text-mc-navy">
-                    <th className="px-3 py-2">Date</th><th className="px-3 py-2">Service</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.bills.map((b, i) => (
-                    <tr key={i} className="border-b border-mc-line">
-                      <td className="px-3 py-2">{b.date}</td>
-                      <td className="px-3 py-2">{b.service}</td>
-                      <td className="px-3 py-2">{b.amount}</td>
-                      <td className="px-3 py-2">{b.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="mt-3 text-sm">Total billed: <strong>{report.totals.billed}</strong> · Paid: <strong>{report.totals.paid}</strong> · Balance: <strong>{report.totals.balance}</strong></p>
-            </>
-          )}
-          <p className="mt-6 text-[11px] text-mc-ink-soft">
+          <dl className="grid gap-2 text-sm sm:grid-cols-3">
+            <Info k="Total billed" v={report.totals.billed} />
+            <Info k="Total paid" v={report.totals.paid} />
+            <Info k="Balance due" v={report.totals.balance} />
+          </dl>
+          <p className="mt-8 text-xs text-mc-ink-soft">
             This report is for you and your clinic. It contains protected health information.
           </p>
         </article>
@@ -113,23 +139,81 @@ export default function PortalDocuments() {
 
       <section className="rounded-2xl border border-mc-line bg-white p-5 shadow-sm">
         <h2 className="font-bold text-mc-navy">Forms & documents</h2>
-        <p className="mt-1 text-xs text-mc-ink-soft">Intake, consent, and forms assigned to you.</p>
+        <p className="mt-1 text-xs text-mc-ink-soft">
+          Intake, consent, and forms assigned to you. Pending items can be signed here — your clinic sees the timestamp.
+        </p>
+        {pending.length > 0 && (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+            {pending.length} form{pending.length > 1 ? 's' : ''} waiting for your signature
+          </p>
+        )}
         {!forms.length ? (
           <p className="mt-3 text-sm text-mc-ink-soft">No documents on file yet.</p>
         ) : (
           <div className="mt-3 divide-y divide-mc-line">
             {forms.map((f) => (
-              <div key={f.id} className="flex items-center justify-between py-3 text-sm">
-                <div>
+              <div key={f.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                <div className="min-w-0">
                   <div className="font-semibold">{f.name}</div>
-                  <div className="text-xs text-mc-ink-soft">{formatLongDate(f.date)}</div>
+                  <div className="text-xs text-mc-ink-soft">
+                    Assigned {formatLongDate(f.date)}
+                    {f.signedAt && ` · Signed ${formatLongDate(f.signedAt)}${f.signedName ? ` by ${f.signedName}` : ''}`}
+                  </div>
                 </div>
-                <span className="text-xs font-bold text-mc-navy">{f.status}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                    f.status === 'Completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-mc-gold-soft text-mc-gold-deep'
+                  }`}
+                  >
+                    {f.status}
+                  </span>
+                  {(f.status === 'Pending' || f.status === 'Needs Review') && (
+                    <button
+                      type="button"
+                      onClick={() => setSigning(f)}
+                      className="rounded-lg bg-mc-navy px-3 py-1.5 text-xs font-bold text-white"
+                    >
+                      Review & sign
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      {signing && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-mc-ink/40 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setSigning(null); }}
+        >
+          <form onSubmit={submitSign} className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-bold text-mc-navy">{signing.name}</h3>
+            <p className="mt-2 rounded-lg border border-mc-line bg-[#faf7f1] px-3 py-3 text-sm text-mc-ink">
+              {FORM_COPY[signing.formKey] || 'I have read this document and agree to its terms.'}
+            </p>
+            <label className="mt-4 block text-xs font-semibold text-mc-ink-soft">
+              Full legal name (electronic signature)
+              <input
+                required
+                className="mt-1 w-full rounded-lg border border-mc-line px-3 py-2 text-sm"
+                value={signedName}
+                onChange={(e) => setSignedName(e.target.value)}
+              />
+            </label>
+            <label className="mt-3 flex items-start gap-2 text-sm">
+              <input required type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1" />
+              <span>I agree that typing my name above is my electronic signature on this form.</span>
+            </label>
+            {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setSigning(null)} className="flex-1 rounded-xl border border-mc-line py-2 text-sm font-semibold">Cancel</button>
+              <button disabled={busy} className="flex-1 rounded-xl bg-mc-gold py-2 text-sm font-bold text-mc-ink disabled:opacity-60">Sign form</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
